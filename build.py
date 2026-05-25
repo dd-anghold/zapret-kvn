@@ -79,7 +79,7 @@ def ensure_venv() -> None:
         return
     _print("Creating virtual environment ...")
     _run([sys.executable, "-m", "venv", str(VENV_DIR)])
-    _run([str(VENV_PIP), "install", "--upgrade", "pip"])
+    _run([str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "pip"])
     _run([str(VENV_PIP), "install", "-r", str(ROOT / "requirements.txt")])
 
 

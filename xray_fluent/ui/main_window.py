@@ -30,6 +30,7 @@ from .logs_page import LogsPage
 from .node_edit_dialog import NodeEditDialog
 from .nodes_page import NodesPage
 from .configs_page import ConfigsPage
+from .routing_page_json import RoutingPage
 from .settings_page import SettingsPage
 from .about_page import AboutPage
 from .history_page import HistoryPage
@@ -78,6 +79,7 @@ class MainWindow(FluentWindow):
         self.dashboard_page = DashboardPage(self)
         self.nodes_page = NodesPage(self)
         self.configs_page = ConfigsPage(self)
+        self.routing = RoutingPage(self)
         self.zapret_page = ZapretPage(self)
         self.logs_page = LogsPage(self)
         self.settings_page = SettingsPage(self)
@@ -123,6 +125,7 @@ class MainWindow(FluentWindow):
         self.navigationInterface.setExpandWidth(200)
         self.addSubInterface(self.dashboard_page, FIF.SPEED_HIGH, "Панель")
         self.addSubInterface(self.nodes_page, FIF.LINK, "Серверы")
+        self.addSubInterface(self.routing, FIF.MUSIC_FOLDER, "Маршруты")
         self.addSubInterface(self.configs_page, FIF.CODE, "Конфиги")
         self.addSubInterface(self.zapret_page, FIF.COMMAND_PROMPT, "Zapret")
         self.addSubInterface(self.logs_page, FIF.DOCUMENT, "Логи")
