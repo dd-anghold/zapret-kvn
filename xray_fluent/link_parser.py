@@ -102,9 +102,16 @@ def _to_bool(value: str) -> bool:
     return str(value).lower() in {"1", "true", "yes", "on"}
 
 
-def _build_stream_settings(params: dict[str, str], default_network: str = "tcp", default_security: str = "none") -> dict[str, Any]:
-    network = (_get_param(params, "type", "net", default=default_network or "tcp") or "tcp").lower()
-    security = (_get_param(params, "security", "tls", default=default_security or "none") or "none").lower()
+def _build_stream_settings(
+    params: dict[str, str], default_network: str = "tcp", default_security: str = "none"
+) -> dict[str, Any]:
+    network = (
+        _get_param(params, "type", "net", default=default_network or "tcp") or "tcp"
+    ).lower()
+    security = (
+        _get_param(params, "security", "tls", default=default_security or "none")
+        or "none"
+    ).lower()
     if security == "none" and _get_param(params, "tls") == "tls":
         security = "tls"
 
@@ -123,6 +130,45 @@ def _build_stream_settings(params: dict[str, str], default_network: str = "tcp",
         if host:
             ws_settings["headers"] = {"Host": host}
         stream["wsSettings"] = ws_settings
+    elif network == "xhttp":
+        import json
+        
+        xhttp_settings: dict[str, Any] = {
+            "path": path or "/",
+        }
+        if host:
+            xhttp_settings["host"] = host
+        
+        mode = _get_param(params, "mode")
+        if mode:
+            xhttp_settings["mode"] = mode
+        extra = _get_param(params, "extra")
+        if extra:
+            try:
+                extra_decoded = unquote(extra)
+                xhttp_settings["extra"] = json.loads(extra_decoded)
+            except Exception:
+                xhttp_settings["extra"] = extra
+        for key in ["scMaxEachPostBytes", "scMaxBufferedPosts", "xPaddingBytes"]:
+            val = _get_param(params, key)
+            if val:
+                if "extra" not in xhttp_settings:
+                    xhttp_settings["extra"] = {}
+                xhttp_settings["extra"][key] = val
+        stream["xhttpSettings"] = xhttp_settings
+    elif network == "httpupgrade":
+        httpupgrade_settings: dict[str, Any] = {}
+        if path:
+            httpupgrade_settings["path"] = path
+        if host:
+            httpupgrade_settings["host"] = host
+        ed = _get_param(params, "ed")
+        if ed:
+            try:
+                httpupgrade_settings["ed"] = int(ed)
+            except ValueError:
+                httpupgrade_settings["ed"] = ed
+        stream["httpupgradeSettings"] = httpupgrade_settings
     elif network in {"http", "h2"}:
         http_settings: dict[str, Any] = {}
         if host:
@@ -146,11 +192,15 @@ def _build_stream_settings(params: dict[str, str], default_network: str = "tcp",
         stream["quicSettings"] = {
             "security": _get_param(params, "quicSecurity", "quic_security") or "none",
             "key": _get_param(params, "key") or "",
-            "header": {"type": _get_param(params, "headerType", "header_type") or "none"},
+            "header": {
+                "type": _get_param(params, "headerType", "header_type") or "none"
+            },
         }
     elif network == "kcp":
         stream["kcpSettings"] = {
-            "header": {"type": _get_param(params, "headerType", "header_type") or "none"},
+            "header": {
+                "type": _get_param(params, "headerType", "header_type") or "none"
+            },
         }
 
     if security == "tls":
@@ -160,7 +210,9 @@ def _build_stream_settings(params: dict[str, str], default_network: str = "tcp",
             tls_settings["serverName"] = sni
         alpn = _get_param(params, "alpn")
         if alpn:
-            tls_settings["alpn"] = [item.strip() for item in alpn.split(",") if item.strip()]
+            tls_settings["alpn"] = [
+                item.strip() for item in alpn.split(",") if item.strip()
+            ]
         fp = _get_param(params, "fp", "fingerprint")
         if fp:
             tls_settings["fingerprint"] = fp
@@ -221,7 +273,11 @@ def _parse_vless(link: str) -> Node:
                 }
             ]
         },
-        "streamSettings": _build_stream_settings(params, default_network="tcp", default_security=params.get("security", "none")),
+        "streamSettings": _build_stream_settings(
+            params,
+            default_network="tcp",
+            default_security=params.get("security", "none"),
+        ),
     }
 
     name = _clean_name(parsed.fragment, f"vless-{server}:{port}")
@@ -257,7 +313,9 @@ def repair_node_outbound_from_link(node: Node) -> bool:
 
 def validate_node_outbound(node: Node) -> str | None:
     outbound = node.outbound if isinstance(node.outbound, dict) else {}
-    stream_settings = outbound.get("streamSettings") if isinstance(outbound, dict) else None
+    stream_settings = (
+        outbound.get("streamSettings") if isinstance(outbound, dict) else None
+    )
     if not isinstance(stream_settings, dict):
         return None
 
@@ -320,7 +378,9 @@ def _parse_vmess(link: str) -> Node:
                 }
             ]
         },
-        "streamSettings": _build_stream_settings(params, default_network=params["net"], default_security=params["security"]),
+        "streamSettings": _build_stream_settings(
+            params, default_network=params["net"], default_security=params["security"]
+        ),
     }
 
     name = _clean_name(str(payload.get("ps") or ""), f"vmess-{server}:{port}")
@@ -356,7 +416,11 @@ def _parse_trojan(link: str) -> Node:
                 }
             ]
         },
-        "streamSettings": _build_stream_settings(params, default_network="tcp", default_security=params.get("security", "tls")),
+        "streamSettings": _build_stream_settings(
+            params,
+            default_network="tcp",
+            default_security=params.get("security", "tls"),
+        ),
     }
 
     name = _clean_name(parsed.fragment, f"trojan-{server}:{port}")
@@ -390,7 +454,11 @@ def _parse_shadowsocks(link: str) -> Node:
     else:
         decoded = _decode_b64(parsed.netloc)
         parsed_decoded = urlsplit(f"ss://{decoded}")
-        if parsed_decoded.username and parsed_decoded.password and parsed_decoded.hostname:
+        if (
+            parsed_decoded.username
+            and parsed_decoded.password
+            and parsed_decoded.hostname
+        ):
             method = unquote(parsed_decoded.username)
             password = unquote(parsed_decoded.password)
             server = parsed_decoded.hostname
