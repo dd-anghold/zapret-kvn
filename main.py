@@ -11,7 +11,6 @@ import threading
 
 from xray_fluent.subprocess_utils import result_output_text, run_text
 
-
 STARTUP_LOG_NAME = "startup.log"
 
 
@@ -35,7 +34,9 @@ class _TeeStream:
                 pass
 
     def isatty(self) -> bool:
-        return any(getattr(stream, "isatty", lambda: False)() for stream in self._streams)
+        return any(
+            getattr(stream, "isatty", lambda: False)() for stream in self._streams
+        )
 
     @property
     def encoding(self) -> str:
@@ -71,7 +72,11 @@ def _setup_bootstrap_logging() -> None:
             backupCount=2,
             encoding="utf-8",
         )
-        handler.setFormatter(logging.Formatter("%(asctime)s  %(levelname)s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s  %(levelname)s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            )
+        )
         _bootstrap_logger.addHandler(handler)
         _bootstrap_logger.setLevel(logging.DEBUG)
         _bootstrap_logger.propagate = False
@@ -87,7 +92,9 @@ def _setup_bootstrap_logging() -> None:
 
     _bootstrap_logger.info("----- startup begin -----")
     _bootstrap_logger.info("argv=%s", sys.argv)
-    _bootstrap_logger.info("frozen=%s executable=%s", getattr(sys, "frozen", False), sys.executable)
+    _bootstrap_logger.info(
+        "frozen=%s executable=%s", getattr(sys, "frozen", False), sys.executable
+    )
     if sys.platform == "win32":
         try:
             version = sys.getwindowsversion()
@@ -113,7 +120,9 @@ def _show_fatal_message_box() -> None:
     try:
         import ctypes
 
-        ctypes.windll.user32.MessageBoxW(None, _fatal_error_message(), "zapret kvn", 0x10)
+        ctypes.windll.user32.MessageBoxW(
+            None, _fatal_error_message(), "zapret kvn", 0x10
+        )
     except Exception:
         pass
 
@@ -122,7 +131,9 @@ def _log_unhandled_exception(exc_type, exc_value, exc_traceback) -> None:
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
         return
-    _bootstrap_logger.exception("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
+    _bootstrap_logger.exception(
+        "Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback)
+    )
     _show_fatal_message_box()
 
 
@@ -158,9 +169,13 @@ def _disable_system_proxy_on_exit() -> None:
     # Disable system proxy
     try:
         import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
-                            0, winreg.KEY_READ) as key:
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            0,
+            winreg.KEY_READ,
+        ) as key:
             enabled, _ = winreg.QueryValueEx(key, "ProxyEnable")
             try:
                 proxy_server, _ = winreg.QueryValueEx(key, "ProxyServer")
@@ -175,10 +190,27 @@ def _disable_system_proxy_on_exit() -> None:
         pass
     # Disable leftover TUN adapter if our interface is still present.
     try:
-        r = run_text(["netsh", "interface", "show", "interface"], timeout=5, creationflags=0x08000000)
+        r = run_text(
+            ["netsh", "interface", "show", "interface"],
+            timeout=5,
+            creationflags=0x08000000,
+        )
         if "ZapretKVN_TUN" in result_output_text(r):
             import subprocess as _sp
-            _sp.run(["netsh", "interface", "set", "interface", "ZapretKVN_TUN", "admin=disable"], capture_output=True, timeout=5, creationflags=0x08000000)
+
+            _sp.run(
+                [
+                    "netsh",
+                    "interface",
+                    "set",
+                    "interface",
+                    "ZapretKVN_TUN",
+                    "admin=disable",
+                ],
+                capture_output=True,
+                timeout=5,
+                creationflags=0x08000000,
+            )
             _bootstrap_logger.info("TUN adapter disabled on exit (safety)")
     except Exception:
         pass
@@ -194,12 +226,16 @@ def _can_start_in_tray() -> bool:
 
         storage = StateStorage()
         if storage.is_encrypted():
-            _bootstrap_logger.info("Tray startup disabled: encrypted state requires passphrase")
+            _bootstrap_logger.info(
+                "Tray startup disabled: encrypted state requires passphrase"
+            )
             return False
 
         state = storage.load()
         if state.security.enabled:
-            _bootstrap_logger.info("Tray startup disabled: master password requires unlock")
+            _bootstrap_logger.info(
+                "Tray startup disabled: master password requires unlock"
+            )
             return False
         return True
     except Exception:
@@ -248,12 +284,7 @@ def _recover_system_proxy_from_previous_run() -> None:
 
 
 def _enforce_frozen() -> None:
-    if not getattr(sys, "frozen", False):
-        raise SystemExit(
-            "ОШИБКА: Прямой запуск не поддерживается.\n"
-            "Сначала соберите приложение:  python build.py\n"
-            "Затем запустите:              dist\\ZapretKVN\\ZapretKVN.exe"
-        )
+    return
 
 
 def main() -> int:
@@ -290,9 +321,13 @@ def main() -> int:
         _bootstrap_logger.warning("System tray unavailable; disabling tray startup")
         start_hidden = False
     if start_hidden and not _can_start_in_tray():
-        _bootstrap_logger.warning("Tray startup requires interactive unlock; showing window instead")
+        _bootstrap_logger.warning(
+            "Tray startup requires interactive unlock; showing window instead"
+        )
         start_hidden = False
-    _bootstrap_logger.info("system tray available=%s start_hidden=%s", tray_available, start_hidden)
+    _bootstrap_logger.info(
+        "system tray available=%s start_hidden=%s", tray_available, start_hidden
+    )
 
     _bootstrap_logger.info("Creating main window shell")
     window = MainWindow(defer_init=not start_hidden)
@@ -300,7 +335,9 @@ def main() -> int:
     splash = None
     if not start_hidden:
         _bootstrap_logger.info("Showing stock splash screen")
-        splash = SplashScreen(window.windowIcon() or QIcon(":/qfluentwidgets/images/logo.png"), window)
+        splash = SplashScreen(
+            window.windowIcon() or QIcon(":/qfluentwidgets/images/logo.png"), window
+        )
         sz = splash.iconSize()
         scale = max(1, window.logicalDpiX() // 96)
         splash.setIconSize(QSize(sz.width() * scale, sz.height() * scale))

@@ -107,8 +107,8 @@ class MainWindow(FluentWindow):
 
         self._consume_update_error_log()
 
-        # Set Xray version on updates page
         from ..engines.xray import get_xray_version
+
         xv = get_xray_version(self.controller.state.settings.xray_path)
         self.updates_page.set_xray_version(xv or "")
 
@@ -116,7 +116,9 @@ class MainWindow(FluentWindow):
             QTimer.singleShot(2500, lambda: self._check_updates(silent=True))
 
         if self.controller.state.settings.xray_auto_update:
-            QTimer.singleShot(4500, lambda: self.controller.run_xray_core_update(True, silent=True))
+            QTimer.singleShot(
+                4500, lambda: self.controller.run_xray_core_update(True, silent=True)
+            )
 
         self._init_zapret_page()
 
@@ -130,9 +132,15 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.zapret_page, FIF.COMMAND_PROMPT, "Zapret")
         self.addSubInterface(self.logs_page, FIF.DOCUMENT, "Логи")
         self.addSubInterface(self.history_page, FIF.HISTORY, "История")
-        self.addSubInterface(self.about_page, FIF.INFO, "О проекте", NavigationItemPosition.BOTTOM)
-        self.addSubInterface(self.updates_page, FIF.UPDATE, "Обновления", NavigationItemPosition.BOTTOM)
-        self.addSubInterface(self.settings_page, FIF.SETTING, "Настройки", NavigationItemPosition.BOTTOM)
+        self.addSubInterface(
+            self.about_page, FIF.INFO, "О проекте", NavigationItemPosition.BOTTOM
+        )
+        self.addSubInterface(
+            self.updates_page, FIF.UPDATE, "Обновления", NavigationItemPosition.BOTTOM
+        )
+        self.addSubInterface(
+            self.settings_page, FIF.SETTING, "Настройки", NavigationItemPosition.BOTTOM
+        )
 
     def _create_tray(self) -> None:
         if not self._tray_available:
@@ -181,23 +189,33 @@ class MainWindow(FluentWindow):
         self.tray_connect_action.triggered.connect(self.controller.toggle_connection)
         self.tray_next_action.triggered.connect(self.controller.switch_next_node)
         self.tray_quit_action.triggered.connect(self._quit_app)
-        self.tray_mode_global.triggered.connect(lambda: self._set_mode_from_tray("global"))
+        self.tray_mode_global.triggered.connect(
+            lambda: self._set_mode_from_tray("global")
+        )
         self.tray_mode_rule.triggered.connect(lambda: self._set_mode_from_tray("rule"))
-        self.tray_mode_direct.triggered.connect(lambda: self._set_mode_from_tray("direct"))
+        self.tray_mode_direct.triggered.connect(
+            lambda: self._set_mode_from_tray("direct")
+        )
 
     def _connect_signals(self) -> None:
         self.dashboard_page.mode_changed.connect(self._set_mode_only)
-        self.dashboard_page.toggle_connection_requested.connect(self.controller.toggle_connection)
+        self.dashboard_page.toggle_connection_requested.connect(
+            self.controller.toggle_connection
+        )
         self.dashboard_page.tun_toggled.connect(self._on_dashboard_tun_toggled)
         self.dashboard_page.proxy_toggled.connect(self._on_dashboard_proxy_toggled)
         self.dashboard_page.node_selected.connect(self.controller.set_selected_node)
 
-        self.nodes_page.import_clipboard_requested.connect(self._import_nodes_from_clipboard)
+        self.nodes_page.import_clipboard_requested.connect(
+            self._import_nodes_from_clipboard
+        )
         self.nodes_page.delete_requested.connect(self.controller.remove_nodes)
         self.nodes_page.reorder_requested.connect(self.controller.reorder_nodes)
         self.nodes_page.selected_node_changed.connect(self.controller.set_selected_node)
         self.nodes_page.ping_requested.connect(self._ping_requested)
-        self.nodes_page.export_outbound_json_requested.connect(self._export_outbound_json)
+        self.nodes_page.export_outbound_json_requested.connect(
+            self._export_outbound_json
+        )
         self.nodes_page.export_runtime_json_requested.connect(self._export_runtime_json)
         self.nodes_page.edit_node_requested.connect(self._on_edit_node)
         self.nodes_page.bulk_edit_requested.connect(self._on_bulk_edit_nodes)
@@ -210,6 +228,8 @@ class MainWindow(FluentWindow):
         self.configs_page.validate_requested.connect(self._validate_core_config)
         self.configs_page.apply_requested.connect(self._apply_core_config)
 
+        self.routing.file_saved.connect(self._on_routing_file_saved)
+
         self.zapret_page.start_requested.connect(self._on_zapret_start)
         self.zapret_page.stop_requested.connect(self._on_zapret_stop)
         self.controller.zapret.started.connect(self._on_zapret_started)
@@ -221,9 +241,13 @@ class MainWindow(FluentWindow):
         self.logs_page.export_diag_requested.connect(self._export_diagnostics)
 
         self.settings_page.save_requested.connect(self.controller.update_settings)
-        self.settings_page.auto_lock_minutes_changed.connect(self._update_auto_lock_minutes)
+        self.settings_page.auto_lock_minutes_changed.connect(
+            self._update_auto_lock_minutes
+        )
         self.settings_page.set_password_requested.connect(self._set_password)
-        self.settings_page.disable_password_requested.connect(self.controller.disable_master_password)
+        self.settings_page.disable_password_requested.connect(
+            self.controller.disable_master_password
+        )
         self.settings_page.lock_now_requested.connect(self.controller.lock)
         self.updates_page.check_app_requested.connect(self._check_updates)
         self.updates_page.check_xray_requested.connect(self._check_xray_updates)
@@ -231,18 +255,23 @@ class MainWindow(FluentWindow):
         self.settings_page.export_backup_requested.connect(self._export_backup)
         self.settings_page.import_backup_requested.connect(self._import_backup)
         self.settings_page.set_encryption_requested.connect(self._set_encryption)
-        self.settings_page.disable_encryption_requested.connect(self._disable_encryption)
+        self.settings_page.disable_encryption_requested.connect(
+            self._disable_encryption
+        )
 
-        # Тест скорости
         self.nodes_page.speed_test_requested.connect(self._speed_test_requested)
-        self.nodes_page.cancel_speed_test_requested.connect(self._cancel_speed_test_requested)
+        self.nodes_page.cancel_speed_test_requested.connect(
+            self._cancel_speed_test_requested
+        )
         self.controller.speed_updated.connect(self._on_speed_updated)
         self.controller.speed_test_cancelled.connect(self._on_speed_test_cancelled)
 
         self.controller.nodes_changed.connect(self._on_nodes_changed)
         self.controller.selection_changed.connect(self._on_selection_changed)
         self.controller.connection_changed.connect(self._on_connection_changed)
-        self.controller.connection_status_changed.connect(self.dashboard_page.set_runtime_status)
+        self.controller.connection_status_changed.connect(
+            self.dashboard_page.set_runtime_status
+        )
         self.controller.routing_changed.connect(self._on_routing_changed)
         self.controller.settings_changed.connect(self._on_settings_changed)
         self.controller.log_line.connect(self.logs_page.append_line)
@@ -255,7 +284,9 @@ class MainWindow(FluentWindow):
         self.controller.xray_update_result.connect(self._on_xray_update_result)
         self.controller.lock_state_changed.connect(self._on_lock_state_changed)
         self.controller.auto_switch_triggered.connect(self._on_auto_switch)
-        self.controller.transition_state_changed.connect(self._on_transition_state_changed)
+        self.controller.transition_state_changed.connect(
+            self._on_transition_state_changed
+        )
         self.stackedWidget.currentChanged.connect(self._on_current_interface_changed)
 
     def _init_window(self) -> None:
@@ -323,8 +354,14 @@ class MainWindow(FluentWindow):
         self.dashboard_page.set_settings_snapshot(settings)
         self._apply_window_geometry(settings)
         self._apply_theme(settings.theme, settings.accent_color)
-        routing_controls_enabled = bool(settings.tun_mode and settings.tun_engine == "tun2socks")
-        for action in (self.tray_mode_global, self.tray_mode_rule, self.tray_mode_direct):
+        routing_controls_enabled = bool(
+            settings.tun_mode and settings.tun_engine == "tun2socks"
+        )
+        for action in (
+            self.tray_mode_global,
+            self.tray_mode_rule,
+            self.tray_mode_direct,
+        ):
             if action is not None:
                 action.setEnabled(routing_controls_enabled)
         self._refresh_tray_tooltip()
@@ -380,7 +417,9 @@ class MainWindow(FluentWindow):
         if result.updated:
             self.updates_page.set_xray_version(result.latest_version)
 
-    def _on_connectivity_test_done(self, ok: bool, message: str, elapsed_ms: int | None) -> None:
+    def _on_connectivity_test_done(
+        self, ok: bool, message: str, elapsed_ms: int | None
+    ) -> None:
         if ok and elapsed_ms is not None:
             self.logs_page.append_line(f"[test] ok {elapsed_ms} ms | {message}")
         else:
@@ -400,7 +439,9 @@ class MainWindow(FluentWindow):
             parent=self,
         )
 
-    def _on_bulk_task_progress(self, task: str, current: int, total: int, completed: bool) -> None:
+    def _on_bulk_task_progress(
+        self, task: str, current: int, total: int, completed: bool
+    ) -> None:
         task = task.strip().lower()
         if task not in {"ping", "speed"}:
             return
@@ -467,13 +508,37 @@ class MainWindow(FluentWindow):
     def _show_status(self, level: str, message: str) -> None:
         level = level.lower().strip()
         if level == "error":
-            InfoBar.error("Ошибка", message, position=InfoBarPosition.TOP_RIGHT, duration=6000, parent=self)
+            InfoBar.error(
+                "Ошибка",
+                message,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=6000,
+                parent=self,
+            )
         elif level == "warning":
-            InfoBar.warning("Внимание", message, position=InfoBarPosition.TOP_RIGHT, duration=3000, parent=self)
+            InfoBar.warning(
+                "Внимание",
+                message,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=3000,
+                parent=self,
+            )
         elif level == "success":
-            InfoBar.success("Успешно", message, position=InfoBarPosition.TOP_RIGHT, duration=2200, parent=self)
+            InfoBar.success(
+                "Успешно",
+                message,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=2200,
+                parent=self,
+            )
         else:
-            InfoBar.info("Инфо", message, position=InfoBarPosition.TOP_RIGHT, duration=2200, parent=self)
+            InfoBar.info(
+                "Инфо",
+                message,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=2200,
+                parent=self,
+            )
 
     def _import_nodes_from_clipboard(self) -> None:
         clipboard = QApplication.clipboard()
@@ -487,7 +552,9 @@ class MainWindow(FluentWindow):
             self._show_status("success", f"Импортировано серверов: {added}")
         if errors:
             preview = "; ".join(errors[:2])
-            self._show_status("warning", f"Некоторые ссылки не удалось импортировать: {preview}")
+            self._show_status(
+                "warning", f"Некоторые ссылки не удалось импортировать: {preview}"
+            )
         if not added and not errors:
             self._show_status("warning", "Новых серверов не импортировано")
 
@@ -516,7 +583,9 @@ class MainWindow(FluentWindow):
     def _on_speed_progress_updated(self, node_id: str, percent: int) -> None:
         self.nodes_page.update_speed_progress(node_id, percent)
 
-    def _on_speed_updated(self, node_id: str, speed_mbps: float | None, is_alive: bool) -> None:
+    def _on_speed_updated(
+        self, node_id: str, speed_mbps: float | None, is_alive: bool
+    ) -> None:
         self.nodes_page.update_speed(node_id, speed_mbps)
         self.nodes_page.update_alive_status(node_id, is_alive)
         self.nodes_page.refresh_detail()
@@ -553,11 +622,17 @@ class MainWindow(FluentWindow):
         if not payload:
             self._show_status("warning", "Выберите сервер для экспорта")
             return
-        suggested_name = "singbox_config.json" if self.controller.is_singbox_editor_mode() else "xray_config.json"
+        suggested_name = (
+            "singbox_config.json"
+            if self.controller.is_singbox_editor_mode()
+            else "xray_config.json"
+        )
         self._save_json_payload(payload, suggested_name)
 
     def _save_json_payload(self, payload: str, suggested_name: str) -> None:
-        file_path, _ = QFileDialog.getSaveFileName(self, "Экспорт JSON", suggested_name, "JSON files (*.json)")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Экспорт JSON", suggested_name, "JSON files (*.json)"
+        )
         if file_path:
             with open(file_path, "w", encoding="utf-8") as file:
                 file.write(payload)
@@ -575,8 +650,16 @@ class MainWindow(FluentWindow):
 
     def _get_core_profile_dir(self, core: str, kind: str) -> Path:
         if core == "singbox":
-            return self.controller.get_singbox_config_dir() if kind == "config" else self.controller.get_singbox_template_dir()
-        return self.controller.get_xray_config_dir() if kind == "config" else self.controller.get_xray_template_dir()
+            return (
+                self.controller.get_singbox_config_dir()
+                if kind == "config"
+                else self.controller.get_singbox_template_dir()
+            )
+        return (
+            self.controller.get_xray_config_dir()
+            if kind == "config"
+            else self.controller.get_xray_template_dir()
+        )
 
     def _get_active_core_profile_relative(self, core: str, kind: str) -> str:
         base_dir = self._get_core_profile_dir(core, kind).resolve()
@@ -621,15 +704,25 @@ class MainWindow(FluentWindow):
             self._get_active_core_profile_relative(core, "template"),
         )
 
-    def _sync_core_template_for_config(self, core: str, config_path: Path) -> Path | None:
+    def _sync_core_template_for_config(
+        self, core: str, config_path: Path
+    ) -> Path | None:
         if core == "singbox":
-            template_path = self.controller._default_singbox_template_path_for_config(config_path)
+            template_path = self.controller._default_singbox_template_path_for_config(
+                config_path
+            )
             if template_path is not None:
-                self.controller._set_active_singbox_template_path(template_path, emit_signal=False)
+                self.controller._set_active_singbox_template_path(
+                    template_path, emit_signal=False
+                )
             return template_path
-        template_path = self.controller._default_xray_template_path_for_config(config_path)
+        template_path = self.controller._default_xray_template_path_for_config(
+            config_path
+        )
         if template_path is not None:
-            self.controller._set_active_xray_template_path(template_path, emit_signal=False)
+            self.controller._set_active_xray_template_path(
+                template_path, emit_signal=False
+            )
         return template_path
 
     def _load_config_editor_documents(self) -> None:
@@ -653,7 +746,9 @@ class MainWindow(FluentWindow):
         )
         self._refresh_core_profile_choices(core)
         self.configs_page.set_template_source(core, template_path)
-        self.configs_page.set_status(core, "info", f"Открыта активная копия: {path.name}")
+        self.configs_page.set_status(
+            core, "info", f"Открыта активная копия: {path.name}"
+        )
 
     def _select_core_config(self, core: str, relative_path: str) -> None:
         try:
@@ -695,7 +790,9 @@ class MainWindow(FluentWindow):
         self.configs_page.set_document(core, path, text)
         self._refresh_core_profile_choices(core)
         self.configs_page.set_template_source(core, template_path)
-        self.configs_page.set_status(core, "info", f"Применён шаблон: {Path(relative_path).name}")
+        self.configs_page.set_status(
+            core, "info", f"Применён шаблон: {Path(relative_path).name}"
+        )
         self._show_status("success", f"Применён шаблон: {Path(relative_path).name}")
 
     def _open_core_config(self, core: str) -> None:
@@ -705,7 +802,9 @@ class MainWindow(FluentWindow):
             if core == "singbox"
             else self.controller.get_xray_template_dir()
         )
-        file_path, _ = QFileDialog.getOpenFileName(self, f"Импортировать {title} template", base_dir, "JSON files (*.json)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, f"Импортировать {title} template", base_dir, "JSON files (*.json)"
+        )
         if not file_path:
             return
         try:
@@ -722,12 +821,21 @@ class MainWindow(FluentWindow):
         self.configs_page.set_document(core, path, text)
         self._refresh_core_profile_choices(core)
         self.configs_page.set_template_source(core, template_path)
-        self.configs_page.set_status(core, "info", f"Импортирован template и обновлена активная копия: {path.name}")
-        self._show_status("success", f"Импортирован template и обновлён активный конфиг: {Path(file_path).name}")
+        self.configs_page.set_status(
+            core,
+            "info",
+            f"Импортирован template и обновлена активная копия: {path.name}",
+        )
+        self._show_status(
+            "success",
+            f"Импортирован template и обновлён активный конфиг: {Path(file_path).name}",
+        )
 
     def _reset_core_config_to_template(self, core: str) -> None:
         if core == "singbox":
-            ok, path, message = self.controller.reset_active_singbox_config_to_template()
+            ok, path, message = (
+                self.controller.reset_active_singbox_config_to_template()
+            )
             template_path = self.controller.get_active_singbox_template_path()
             loader = self.controller.load_active_singbox_config_text
         else:
@@ -783,8 +891,51 @@ class MainWindow(FluentWindow):
         self.configs_page.set_status(core, level, message)
         self._show_status(level, message.splitlines()[0])
 
+    def _on_routing_file_saved(self, core: str, file_path_str: str) -> None:
+        path = Path(file_path_str)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except Exception as exc:
+            self._show_status("error", f"Routing: не удалось прочитать файл: {exc}")
+            return
+
+        if core == "singbox":
+            active = self.controller.get_active_singbox_config_path()
+        else:
+            active = self.controller.get_active_xray_config_path()
+
+        if active is None:
+            return
+
+        try:
+            if active.resolve() != path.resolve():
+                return
+        except Exception:
+            return
+
+        self.configs_page.set_document(core, path, text)
+
+        if core == "singbox":
+            ok, saved_path, message = self.controller.apply_singbox_config_text(text)
+        else:
+            ok, saved_path, message = self.controller.apply_xray_config_text(text)
+
+        if not ok:
+            self.configs_page.set_status(core, "error", message)
+            self._show_status("error", message.splitlines()[0])
+            return
+
+        if saved_path is not None:
+            self.configs_page.mark_saved(core, saved_path, text)
+
+        self.configs_page.set_status(
+            core, "success", f"Routing: правила сохранены ({path.name})"
+        )
+        self._show_status("success", f"Правила сохранены и применены: {path.name}")
+
     def _on_dashboard_tun_toggled(self, checked: bool) -> None:
         from copy import deepcopy
+
         settings = deepcopy(self.controller.state.settings)
         settings.tun_mode = checked
         if checked:
@@ -793,12 +944,14 @@ class MainWindow(FluentWindow):
 
     def _on_dashboard_proxy_toggled(self, checked: bool) -> None:
         from copy import deepcopy
+
         settings = deepcopy(self.controller.state.settings)
         settings.enable_system_proxy = checked
         self.controller.update_settings(settings)
 
     def _set_mode_only(self, mode: str) -> None:
         from copy import deepcopy
+
         routing = deepcopy(self.controller.state.routing)
         routing.mode = mode
         self.controller.update_routing(routing)
@@ -821,10 +974,9 @@ class MainWindow(FluentWindow):
         path = self.controller.build_diagnostics()
         self._show_status("success", f"Диагностика экспортирована: {path}")
 
-    # ── Zapret ───────────────────────────────────────────────
-
     def _init_zapret_page(self) -> None:
         from ..zapret_manager import ZapretManager
+
         infos = ZapretManager.list_preset_infos()
         saved = self.controller.state.settings.zapret_preset
         self.zapret_page.set_presets(infos, saved)
@@ -857,8 +1009,12 @@ class MainWindow(FluentWindow):
         self._update_in_progress = True
         self._pending_update: AppUpdate | None = None
         self._update_checker = UpdateChecker(parent=self)
-        self._update_checker.result.connect(lambda u: self._on_update_check_result(u, silent))
-        self._update_checker.error.connect(lambda e: self._on_update_check_error(e, silent))
+        self._update_checker.result.connect(
+            lambda u: self._on_update_check_result(u, silent)
+        )
+        self._update_checker.error.connect(
+            lambda e: self._on_update_check_error(e, silent)
+        )
         self._update_checker.start()
         if not silent:
             self.updates_page.show_checking()
@@ -885,7 +1041,10 @@ class MainWindow(FluentWindow):
                 f"Доступна новая версия: v{update.version}. Установка отключена в настройках"
             )
             if not silent:
-                self._show_status("warning", "Доступно обновление, но установка отключена в настройках")
+                self._show_status(
+                    "warning",
+                    "Доступно обновление, но установка отключена в настройках",
+                )
             return
 
         self._pending_update = update
@@ -901,10 +1060,10 @@ class MainWindow(FluentWindow):
         if silent:
             return
 
-        # Switch to Updates page and show dialog
         self.switchTo(self.updates_page)
 
         from qfluentwidgets import MessageBox
+
         box = MessageBox(
             "Доступно обновление",
             f"Доступна новая версия v{update.version}.\n"
@@ -920,7 +1079,9 @@ class MainWindow(FluentWindow):
     def _start_update_download(self, update: AppUpdate) -> None:
         if not self.controller.state.settings.allow_updates:
             self.updates_page.show_idle()
-            self.updates_page.set_app_status("Установка обновлений отключена в настройках")
+            self.updates_page.set_app_status(
+                "Установка обновлений отключена в настройках"
+            )
             self._show_status("warning", "Установка обновлений отключена в настройках")
             return
 
@@ -928,10 +1089,10 @@ class MainWindow(FluentWindow):
         self.switchTo(self.updates_page)
         self.updates_page.show_download_progress(0)
 
-        # Use proxy if connected
         proxy_url = None
         if self.controller.connected:
             from ..constants import PROXY_HOST
+
             port = self.controller.get_effective_http_proxy_port()
             if port:
                 proxy_url = f"http://{PROXY_HOST}:{port}"
@@ -944,7 +1105,9 @@ class MainWindow(FluentWindow):
             restart_in_tray=restart_in_tray,
             parent=self,
         )
-        self._update_downloader.progress.connect(self.updates_page.show_download_progress)
+        self._update_downloader.progress.connect(
+            self.updates_page.show_download_progress
+        )
         self._update_downloader.status.connect(self.updates_page.set_app_status)
         self._update_downloader.finished_ok.connect(self._on_update_ready)
         self._update_downloader.error.connect(self._on_update_error)
@@ -985,7 +1148,9 @@ class MainWindow(FluentWindow):
         except Exception:
             pass
 
-        message = "Предыдущее обновление не завершилось. См. data/logs/update_error.last.log"
+        message = (
+            "Предыдущее обновление не завершилось. См. data/logs/update_error.last.log"
+        )
         if content:
             self.logs_page.append_line("[update] previous install failed")
             for line in content.splitlines()[:10]:
@@ -1056,7 +1221,6 @@ class MainWindow(FluentWindow):
             self._geometry_persistence_ready = True
             return True
 
-        # State file is encrypted — ask for passphrase
         while True:
             dialog = PasswordDialog("Зашифрованные данные", self)
             dialog.password_edit.setPlaceholderText("Введите пароль шифрования")
@@ -1079,19 +1243,23 @@ class MainWindow(FluentWindow):
 
     def _export_backup(self) -> None:
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Экспорт резервной копии", "xray_fluent_backup.json", "Backup files (*.json)"
+            self,
+            "Экспорт резервной копии",
+            "xray_fluent_backup.json",
+            "Backup files (*.json)",
         )
         if not file_path:
             return
 
         passphrase = ""
         dialog = PasswordDialog("Зашифровать резервную копию?", self)
-        dialog.password_edit.setPlaceholderText("Пароль (оставьте пустым для открытого формата)")
+        dialog.password_edit.setPlaceholderText(
+            "Пароль (оставьте пустым для открытого формата)"
+        )
         if dialog.exec() == int(QDialog.DialogCode.Accepted):
             passphrase = dialog.password()
 
         try:
-            from pathlib import Path
             self.controller.export_backup(Path(file_path), passphrase)
             self._show_status("success", f"Резервная копия экспортирована: {file_path}")
         except Exception as exc:
@@ -1104,12 +1272,12 @@ class MainWindow(FluentWindow):
         if not file_path:
             return
 
-        from pathlib import Path
         path = Path(file_path)
         raw = path.read_text(encoding="utf-8").strip()
 
         passphrase = ""
         from ..security import is_passphrase_encrypted
+
         if is_passphrase_encrypted(raw):
             dialog = PasswordDialog("Расшифровать резервную копию", self)
             dialog.password_edit.setPlaceholderText("Введите пароль резервной копии")
@@ -1143,7 +1311,10 @@ class MainWindow(FluentWindow):
             self.raise_()
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason in {QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick}:
+        if reason in {
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        }:
             self._toggle_window_visible()
 
     def _quit_app(self) -> None:
@@ -1197,5 +1368,10 @@ class MainWindow(FluentWindow):
         e.ignore()
         self.hide()
         if self.tray is not None and not self._tray_notified:
-            self.tray.showMessage(APP_NAME, "Приложение свёрнуто в системный трей", QSystemTrayIcon.MessageIcon.Information, 2000)
+            self.tray.showMessage(
+                APP_NAME,
+                "Приложение свёрнуто в системный трей",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000,
+            )
             self._tray_notified = True
