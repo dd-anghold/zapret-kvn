@@ -33,6 +33,7 @@ MANIFEST = ROOT / "uac_admin.manifest"
 CORE_DIR = ROOT / "core"
 ZAPRET_DIR = ROOT / "zapret"
 DATA_TEMPLATES_DIR = ROOT / "data" / "templates"
+DATA_CONFIGS_DIR = ROOT / "data" / "configs"
 
 
 def _print(msg: str) -> None:
@@ -164,6 +165,12 @@ def build_exe() -> None:
     if DATA_TEMPLATES_DIR.is_dir():
         _print(f"Merging templates -> {dst_templates}")
         _copy_tree_merge(DATA_TEMPLATES_DIR, dst_templates)
+
+    # Copy default configs for first-run users (xray + sing-box)
+    dst_configs = APP_DIR / "data" / "configs"
+    if DATA_CONFIGS_DIR.is_dir():
+        _print(f"Merging configs -> {dst_configs}")
+        _copy_tree_merge(DATA_CONFIGS_DIR, dst_configs)
 
     _print(f"Build complete: {APP_DIR / (APP_NAME + '.exe')}")
 

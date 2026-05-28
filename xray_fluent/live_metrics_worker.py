@@ -86,8 +86,11 @@ class LiveMetricsWorker(QThread):
                 and prev_ts is not None
             ):
                 dt = max(0.001, now - prev_ts)
-                up_bps = max(0.0, (uplink_total - prev_uplink) / dt)
-                down_bps = max(0.0, (downlink_total - prev_downlink) / dt)
+                # dt > 10s means system was asleep; skip this tick to avoid a
+                # single massive spike caused by the accumulated-while-asleep delta.
+                if dt <= 10.0:
+                    up_bps = max(0.0, (uplink_total - prev_uplink) / dt)
+                    down_bps = max(0.0, (downlink_total - prev_downlink) / dt)
 
             if uplink_total is not None and downlink_total is not None:
                 prev_uplink = uplink_total
@@ -103,8 +106,9 @@ class LiveMetricsWorker(QThread):
                 if self._mode == "singbox":
                     process_stats = collect_process_stats(self._clash_api_port)
                 elif self._mode == "xray":
+                    proc_elapsed = (now - prev_ts) if prev_ts is not None else 0.0
                     process_stats = self._collect_proxy_process_stats(
-                        proxy_prev_bytes, proxy_closed_bytes,
+                        proxy_prev_bytes, proxy_closed_bytes, proc_elapsed,
                     )
 
             self.metrics.emit(
@@ -126,6 +130,7 @@ class LiveMetricsWorker(QThread):
         self,
         prev_bytes: dict[str, tuple[int, int]],
         closed_bytes: dict[str, tuple[int, int]],
+        elapsed_sec: float = 0.0,
     ) -> list[ProcessTrafficSnapshot] | None:
         """Build per-process stats in proxy mode.
 
@@ -156,9 +161,15 @@ class LiveMetricsWorker(QThread):
             total_in = cl_in + p.bytes_in
             total_out = cl_out + p.bytes_out
 
-            # Speed from active connection deltas
-            down_speed = max(0.0, (p.bytes_in - prev_in) / 2.0) if prev_in > 0 and p.bytes_in >= prev_in else 0.0
-            up_speed = max(0.0, (p.bytes_out - prev_out) / 2.0) if prev_out > 0 and p.bytes_out >= prev_out else 0.0
+            # Speed only when we have previous data AND the interval is sane.
+            # elapsed_sec == 0 means first tick; > 10s means system was asleep — both → 0.
+            dt = max(0.001, elapsed_sec)
+            if p.exe in prev_bytes and 0.0 < elapsed_sec <= 10.0:
+                down_speed = max(0.0, (p.bytes_in - prev_in) / dt) if p.bytes_in >= prev_in else 0.0
+                up_speed = max(0.0, (p.bytes_out - prev_out) / dt) if p.bytes_out >= prev_out else 0.0
+            else:
+                down_speed = 0.0
+                up_speed = 0.0
             prev_bytes[p.exe] = (p.bytes_in, p.bytes_out)
 
             result.append(ProcessTrafficSnapshot(

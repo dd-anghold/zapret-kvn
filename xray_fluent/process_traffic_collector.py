@@ -137,7 +137,7 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
     import time as _time
     global _prev_time
     now = _time.monotonic()
-    dt = max(0.5, now - _prev_time) if _prev_time > 0 else 2.0
+    dt = max(0.5, now - _prev_time) if _prev_time > 0 else 0.0
     _prev_time = now
 
     # Build snapshots
@@ -162,10 +162,16 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
         total_up = stats["upload"] + closed_up
         total_down = stats["download"] + closed_down
 
-        # Speed from monotonic total delta
-        prev_up, prev_down = _prev_proc_total.get(exe, (0, 0))
-        up_speed = max(0.0, (total_up - prev_up) / dt)
-        down_speed = max(0.0, (total_down - prev_down) / dt)
+        # Speed only when we have a previous measurement AND interval is sane.
+        # dt == 0.0 means first tick; dt > 10.0 means system was asleep — both → 0.
+        prev_entry = _prev_proc_total.get(exe)
+        if prev_entry is not None and 0.0 < dt <= 10.0:
+            prev_up, prev_down = prev_entry
+            up_speed = max(0.0, (total_up - prev_up) / dt)
+            down_speed = max(0.0, (total_down - prev_down) / dt)
+        else:
+            up_speed = 0.0
+            down_speed = 0.0
         _prev_proc_total[exe] = (total_up, total_down)
 
         result.append(ProcessTrafficSnapshot(

@@ -59,13 +59,17 @@ from .application.nodes import (
     get_next_node_for_auto_switch as get_next_node_for_auto_switch_operation,
     get_node_by_id as get_node_by_id_operation,
     import_nodes_from_text as import_nodes_from_text_operation,
+    import_subscription as import_subscription_operation,
     on_countries_resolved as on_countries_resolved_operation,
     prepare_node_for_runtime as prepare_node_for_runtime_operation,
     remove_nodes as remove_nodes_operation,
+    remove_subscription as remove_subscription_operation,
+    rename_subscription as rename_subscription_operation,
     reorder_nodes as reorder_nodes_operation,
     set_selected_node as set_selected_node_operation,
     start_country_ip_resolution as start_country_ip_resolution_operation,
     update_node as update_node_operation,
+    update_subscription as update_subscription_operation,
 )
 from .application.runtime import (
     ActiveSessionSnapshot,
@@ -207,6 +211,7 @@ class AppController(QObject):
     passphrase_required = pyqtSignal()
     auto_switch_triggered = pyqtSignal(str)  # node name we're switching to
     transition_state_changed = pyqtSignal(bool, str)
+    subscriptions_changed = pyqtSignal(object)
 
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
@@ -322,6 +327,7 @@ class AppController(QObject):
         self.selection_changed.emit(self.selected_node)
         self.routing_changed.emit(self.state.routing)
         self.settings_changed.emit(self.state.settings)
+        self.subscriptions_changed.emit(self.state.subscriptions)
         QTimer.singleShot(500, self._start_country_ip_resolution)
 
         version = get_xray_version(self.state.settings.xray_path)
@@ -1116,6 +1122,18 @@ class AppController(QObject):
 
     def set_selected_node(self, node_id: str) -> None:
         set_selected_node_operation(self, node_id)
+
+    def import_subscription(self, url: str, name: str) -> tuple[int, list[str]]:
+        return import_subscription_operation(self, url, name)
+
+    def update_subscription(self, sub_id: str) -> tuple[int, int, list[str]]:
+        return update_subscription_operation(self, sub_id)
+
+    def remove_subscription(self, sub_id: str) -> None:
+        remove_subscription_operation(self, sub_id)
+
+    def rename_subscription(self, sub_id: str, new_name: str) -> bool:
+        return rename_subscription_operation(self, sub_id, new_name)
 
     def _set_connection_status(self, phase: str, message: str, level: str | None = None) -> None:
         self.connection_status_changed.emit(phase, message)

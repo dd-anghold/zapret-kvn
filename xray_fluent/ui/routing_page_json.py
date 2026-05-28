@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -25,44 +26,64 @@ from PyQt6.QtWidgets import (
 )
 from qfluentwidgets import SegmentedWidget
 
-XRAY_DOMAIN_STRATEGIES  = ["AsIs", "IPIfNonMatch", "IPOnDemand"]
-XRAY_DEFAULT_STRATEGY   = "AsIs"
+XRAY_DOMAIN_STRATEGIES = ["AsIs", "IPIfNonMatch", "IPOnDemand"]
+XRAY_DEFAULT_STRATEGY = "AsIs"
 SINGBOX_DEFAULT_RESOLVER = ""
 
-XRAY_PROTOCOLS  = ["http", "tls", "quic", "bittorrent", "dtls", "wireguard"]
-XRAY_NETWORKS   = ["", "tcp", "udp", "tcp,udp"]
-XRAY_OUTBOUNDS  = ["proxy", "direct", "block"]
+XRAY_PROTOCOLS = ["http", "tls", "quic", "bittorrent", "dtls", "wireguard"]
+XRAY_NETWORKS = ["", "tcp", "udp", "tcp,udp"]
+XRAY_OUTBOUNDS = ["proxy", "direct", "block"]
 
-SINGBOX_ACTIONS  = ["", "route", "sniff", "hijack-dns", "reject", "return"]
+SINGBOX_ACTIONS = ["", "route", "sniff", "hijack-dns", "reject", "return"]
 SINGBOX_PROTOCOLS = ["dns", "quic", "http", "tls", "bittorrent"]
 
-X_COL_ENABLED  = 0
-X_COL_NUM      = 1
-X_COL_REMARKS  = 2
+X_COL_ENABLED = 0
+X_COL_NUM = 1
+X_COL_REMARKS = 2
 X_COL_OUTBOUND = 3
-X_COL_ACTION   = 4
-X_COL_PORT     = 5
+X_COL_ACTION = 4
+X_COL_PORT = 5
 X_COL_PROTOCOL = 6
-X_COL_NETWORK  = 7
-X_COL_DOMAIN   = 8
-X_COL_IP       = 9
-X_COL_PROCESS  = 10
+X_COL_NETWORK = 7
+X_COL_DOMAIN = 8
+X_COL_IP = 9
+X_COL_PROCESS = 10
 
-XRAY_COLUMNS = ["✓", "#", "remarks", "outbound", "action",
-                "port", "protocol", "network", "domain", "ip", "process"]
+XRAY_COLUMNS = [
+    "✓",
+    "#",
+    "remarks",
+    "outbound",
+    "action",
+    "port",
+    "protocol",
+    "network",
+    "domain",
+    "ip",
+    "process",
+]
 
-S_COL_NUM      = 0
+S_COL_NUM = 0
 S_COL_OUTBOUND = 1
-S_COL_ACTION   = 2
-S_COL_PORT     = 3
+S_COL_ACTION = 2
+S_COL_PORT = 3
 S_COL_PROTOCOL = 4
-S_COL_NETWORK  = 5
-S_COL_DOMAIN   = 6
-S_COL_IP       = 7
-S_COL_PROCESS  = 8
+S_COL_NETWORK = 5
+S_COL_DOMAIN = 6
+S_COL_IP = 7
+S_COL_PROCESS = 8
 
-SINGBOX_COLUMNS = ["#", "outbound", "action", "port", "protocol",
-                   "network", "domain", "ip", "process"]
+SINGBOX_COLUMNS = [
+    "#",
+    "outbound",
+    "action",
+    "port",
+    "protocol",
+    "network",
+    "domain",
+    "ip",
+    "process",
+]
 
 
 def _join(val) -> str:
@@ -79,15 +100,15 @@ def _parse_entries(text: str) -> list[str]:
 
 
 def _extract_rule_fields(rule: dict) -> tuple:
-    enabled  = bool(rule.get("enabled", True))
-    remarks  = rule.get("remarks", "")
+    enabled = bool(rule.get("enabled", True))
+    remarks = rule.get("remarks", "")
     outbound = rule.get("outbound", rule.get("outboundTag", ""))
-    action   = rule.get("action", "")
-    port     = str(rule.get("port", ""))
+    action = rule.get("action", "")
+    port = str(rule.get("port", ""))
 
     raw_proto = rule.get("protocol", [])
-    protocol  = _join(raw_proto) if raw_proto else ""
-    network   = rule.get("network", "")
+    protocol = _join(raw_proto) if raw_proto else ""
+    network = rule.get("network", "")
 
     domain_parts: list[str] = []
     for key in ("domain", "domain_suffix", "domain_keyword", "domain_regex"):
@@ -112,7 +133,18 @@ def _extract_rule_fields(rule: dict) -> tuple:
             process_parts.extend(v if isinstance(v, list) else [str(v)])
     process = ", ".join(process_parts)
 
-    return enabled, remarks, outbound, action, port, protocol, network, domain, ip, process
+    return (
+        enabled,
+        remarks,
+        outbound,
+        action,
+        port,
+        protocol,
+        network,
+        domain,
+        ip,
+        process,
+    )
 
 
 def _load_json(path: Path) -> dict:
@@ -294,13 +326,10 @@ class _SectionLabel(QLabel):
 
 
 class RuleEditDialog(QDialog):
-    def __init__(self, rule: dict, core: str, file_path: Path,
-                 rule_index: int, parent=None):
+    def __init__(self, rule: dict, core: str, parent=None):
         super().__init__(parent)
-        self._rule        = copy.deepcopy(rule)
-        self._core        = core
-        self._file_path   = file_path
-        self._rule_index  = rule_index
+        self._rule = copy.deepcopy(rule)
+        self._core = core
 
         self.setWindowTitle("Routing Rule Details Setting")
         self.resize(860, 620)
@@ -332,12 +361,12 @@ class RuleEditDialog(QDialog):
 
             grid.addWidget(QLabel("outboundTag"), row, 0)
             self._outbound_combo = QComboBox()
-            self._outbound_combo.setEditable(True)
             for o in XRAY_OUTBOUNDS:
                 self._outbound_combo.addItem(o)
-            self._outbound_combo.setCurrentText(
-                rule.get("outboundTag", rule.get("outbound", ""))
-            )
+            current_outbound = rule.get("outboundTag", rule.get("outbound", ""))
+            idx = self._outbound_combo.findText(current_outbound)
+            if idx >= 0:
+                self._outbound_combo.setCurrentIndex(idx)
             grid.addWidget(self._outbound_combo, row, 1)
             row += 1
 
@@ -585,7 +614,9 @@ class RuleEditDialog(QDialog):
                 rule["process_name"] = process_entries
 
         if self._core == "xray" and hasattr(self, "_inbound_btns"):
-            selected_inbounds = [t for t, b in self._inbound_btns.items() if b.isChecked()]
+            selected_inbounds = [
+                t for t, b in self._inbound_btns.items() if b.isChecked()
+            ]
             if selected_inbounds:
                 rule["inboundTag"] = selected_inbounds
             else:
@@ -593,22 +624,10 @@ class RuleEditDialog(QDialog):
 
         return rule
 
+    def get_updated_rule(self) -> dict:
+        return self._build_updated_rule()
+
     def _on_confirm(self):
-        updated_rule = self._build_updated_rule()
-        try:
-            data = _load_json(self._file_path)
-            if self._core == "xray":
-                rules = data.get("routing", {}).get("rules", [])
-            else:
-                rules = data.get("route", {}).get("rules", [])
-
-            if self._rule_index < len(rules):
-                rules[self._rule_index] = updated_rule
-
-            _save_json(self._file_path, data)
-        except Exception as e:
-            print(f"[routing] save rule failed: {e}")
-            return
         self.accept()
 
 
@@ -618,12 +637,10 @@ class RuleDetailDialog(QDialog):
     def __init__(self, config_name: str, file_path: Path, core: str, parent=None):
         super().__init__(parent)
 
-        self._file_path   = file_path
-        self._core        = core
+        self._file_path = file_path
+        self._core = core
         self._config_name = config_name
-        self._pending_enabled: dict[int, bool] = {}
-        self._pending_strategy: str | None     = None
-        self._original_data: dict = {}
+        self._draft_data: dict = {}   # all edits live here until Confirm
 
         self.setWindowTitle(f"Rule Settings — {config_name}")
         self.resize(1300, 660)
@@ -663,14 +680,36 @@ class RuleDetailDialog(QDialog):
         self._table = QTableWidget()
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table.verticalHeader().setVisible(False)
         self._table.setShowGrid(False)
         self._table.setAlternatingRowColors(True)
         self._table.cellDoubleClicked.connect(self._on_row_double_clicked)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_context_menu)
+        self._table.installEventFilter(self)
 
         self._setup_columns()
         layout.addWidget(self._table)
+
+        add_rule_row = QHBoxLayout()
+        self._add_rule_btn = QPushButton("Add Rule")
+        self._add_rule_btn.setObjectName("confirmBtn")
+        self._add_rule_btn.clicked.connect(self._on_add_rule)
+        add_rule_row.addWidget(self._add_rule_btn)
+
+        self._import_clip_btn = QPushButton("Import from Clipboard")
+        self._import_clip_btn.setObjectName("cancelBtn")
+        self._import_clip_btn.clicked.connect(self._on_import_clipboard)
+        add_rule_row.addWidget(self._import_clip_btn)
+
+        self._import_file_btn = QPushButton("Import from File")
+        self._import_file_btn.setObjectName("cancelBtn")
+        self._import_file_btn.clicked.connect(self._on_import_file)
+        add_rule_row.addWidget(self._import_file_btn)
+
+        add_rule_row.addStretch()
+        layout.addLayout(add_rule_row)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -691,7 +730,7 @@ class RuleDetailDialog(QDialog):
         self._populate()
 
     def _setup_columns(self):
-        is_xray = (self._core == "xray")
+        is_xray = self._core == "xray"
         columns = XRAY_COLUMNS if is_xray else SINGBOX_COLUMNS
 
         self._table.setColumnCount(len(columns))
@@ -704,30 +743,33 @@ class RuleDetailDialog(QDialog):
 
         last = len(columns) - 1
         for col in range(len(columns)):
-            mode = QHeaderView.ResizeMode.Stretch if col == last \
-                   else QHeaderView.ResizeMode.Interactive
+            mode = (
+                QHeaderView.ResizeMode.Stretch
+                if col == last
+                else QHeaderView.ResizeMode.Interactive
+            )
             hv.setSectionResizeMode(col, mode)
 
         if is_xray:
-            self._table.setColumnWidth(X_COL_ENABLED,  36)
-            self._table.setColumnWidth(X_COL_NUM,       40)
-            self._table.setColumnWidth(X_COL_REMARKS,  160)
-            self._table.setColumnWidth(X_COL_OUTBOUND,  90)
-            self._table.setColumnWidth(X_COL_ACTION,    80)
-            self._table.setColumnWidth(X_COL_PORT,      80)
+            self._table.setColumnWidth(X_COL_ENABLED, 36)
+            self._table.setColumnWidth(X_COL_NUM, 40)
+            self._table.setColumnWidth(X_COL_REMARKS, 160)
+            self._table.setColumnWidth(X_COL_OUTBOUND, 90)
+            self._table.setColumnWidth(X_COL_ACTION, 80)
+            self._table.setColumnWidth(X_COL_PORT, 80)
             self._table.setColumnWidth(X_COL_PROTOCOL, 100)
-            self._table.setColumnWidth(X_COL_NETWORK,   80)
-            self._table.setColumnWidth(X_COL_DOMAIN,   220)
-            self._table.setColumnWidth(X_COL_IP,       180)
+            self._table.setColumnWidth(X_COL_NETWORK, 80)
+            self._table.setColumnWidth(X_COL_DOMAIN, 220)
+            self._table.setColumnWidth(X_COL_IP, 180)
         else:
-            self._table.setColumnWidth(S_COL_NUM,       40)
-            self._table.setColumnWidth(S_COL_OUTBOUND,  90)
-            self._table.setColumnWidth(S_COL_ACTION,    90)
-            self._table.setColumnWidth(S_COL_PORT,      80)
+            self._table.setColumnWidth(S_COL_NUM, 40)
+            self._table.setColumnWidth(S_COL_OUTBOUND, 90)
+            self._table.setColumnWidth(S_COL_ACTION, 90)
+            self._table.setColumnWidth(S_COL_PORT, 80)
             self._table.setColumnWidth(S_COL_PROTOCOL, 100)
-            self._table.setColumnWidth(S_COL_NETWORK,   80)
-            self._table.setColumnWidth(S_COL_DOMAIN,   240)
-            self._table.setColumnWidth(S_COL_IP,       200)
+            self._table.setColumnWidth(S_COL_NETWORK, 80)
+            self._table.setColumnWidth(S_COL_DOMAIN, 240)
+            self._table.setColumnWidth(S_COL_IP, 200)
 
     def _load_data(self) -> dict:
         try:
@@ -750,19 +792,12 @@ class RuleDetailDialog(QDialog):
         return rules, strategy
 
     def _populate(self):
-        self._pending_enabled.clear()
-        self._pending_strategy = None
-
         data = self._load_data()
-        self._original_data = copy.deepcopy(data)
+        self._draft_data = copy.deepcopy(data)
 
-        rules, strategy = self._get_rules_and_strategy(data)
+        rules, strategy = self._get_rules_and_strategy(self._draft_data)
 
-        self._header_label.setText(
-            f"<b>{self._config_name}</b>"
-            f" &nbsp;·&nbsp; {len(rules)} rules"
-            f" &nbsp;·&nbsp; core: {self._core}"
-        )
+        self._update_header(rules)
 
         self._strategy_combo.blockSignals(True)
         if self._core == "xray":
@@ -775,16 +810,23 @@ class RuleDetailDialog(QDialog):
         self._fill_table(rules)
 
     def _fill_table(self, rules: list):
-        is_xray = (self._core == "xray")
+        is_xray = self._core == "xray"
         self._table.setRowCount(0)
         self._table.setRowCount(len(rules))
 
         for i, rule in enumerate(rules):
-            (enabled, remarks, outbound, action,
-             port, protocol, network, domain, ip, process) = _extract_rule_fields(rule)
-
-            if i in self._pending_enabled:
-                enabled = self._pending_enabled[i]
+            (
+                enabled,
+                remarks,
+                outbound,
+                action,
+                port,
+                protocol,
+                network,
+                domain,
+                ip,
+                process,
+            ) = _extract_rule_fields(rule)
 
             if is_xray:
                 cb = _CheckCell(
@@ -792,31 +834,31 @@ class RuleDetailDialog(QDialog):
                     on_changed=lambda state, r=i: self._on_checkbox_changed(r, state),
                 )
                 self._table.setCellWidget(i, X_COL_ENABLED, cb)
-                self._set_item(i, X_COL_NUM,      str(i + 1))
-                self._set_item(i, X_COL_REMARKS,  remarks)
+                self._set_item(i, X_COL_NUM, str(i + 1))
+                self._set_item(i, X_COL_REMARKS, remarks)
                 self._set_item(i, X_COL_OUTBOUND, outbound)
-                self._set_item(i, X_COL_ACTION,   action)
-                self._set_item(i, X_COL_PORT,     port)
+                self._set_item(i, X_COL_ACTION, action)
+                self._set_item(i, X_COL_PORT, port)
                 self._set_item(i, X_COL_PROTOCOL, protocol)
-                self._set_item(i, X_COL_NETWORK,  network)
-                self._set_item(i, X_COL_DOMAIN,   domain)
-                self._set_item(i, X_COL_IP,       ip)
-                self._set_item(i, X_COL_PROCESS,  process)
+                self._set_item(i, X_COL_NETWORK, network)
+                self._set_item(i, X_COL_DOMAIN, domain)
+                self._set_item(i, X_COL_IP, ip)
+                self._set_item(i, X_COL_PROCESS, process)
                 if not enabled:
                     for col in range(1, self._table.columnCount()):
                         item = self._table.item(i, col)
                         if item:
                             item.setForeground(QColor("#606060"))
             else:
-                self._set_item(i, S_COL_NUM,      str(i + 1))
+                self._set_item(i, S_COL_NUM, str(i + 1))
                 self._set_item(i, S_COL_OUTBOUND, outbound)
-                self._set_item(i, S_COL_ACTION,   action)
-                self._set_item(i, S_COL_PORT,     port)
+                self._set_item(i, S_COL_ACTION, action)
+                self._set_item(i, S_COL_PORT, port)
                 self._set_item(i, S_COL_PROTOCOL, protocol)
-                self._set_item(i, S_COL_NETWORK,  network)
-                self._set_item(i, S_COL_DOMAIN,   domain)
-                self._set_item(i, S_COL_IP,       ip)
-                self._set_item(i, S_COL_PROCESS,  process)
+                self._set_item(i, S_COL_NETWORK, network)
+                self._set_item(i, S_COL_DOMAIN, domain)
+                self._set_item(i, S_COL_IP, ip)
+                self._set_item(i, S_COL_PROCESS, process)
 
     def _set_item(self, row: int, col: int, value: str):
         item = QTableWidgetItem(value)
@@ -824,8 +866,16 @@ class RuleDetailDialog(QDialog):
         self._table.setItem(row, col, item)
 
     def _on_checkbox_changed(self, row: int, state: int):
-        checked = (state == Qt.CheckState.Checked.value)
-        self._pending_enabled[row] = checked
+        checked = state == Qt.CheckState.Checked.value
+        if self._core == "xray":
+            rules = self._draft_data.get("routing", {}).get("rules", [])
+        else:
+            rules = self._draft_data.get("route", {}).get("rules", [])
+        if row < len(rules):
+            if checked:
+                rules[row].pop("enabled", None)
+            else:
+                rules[row]["enabled"] = False
         color = QColor("#ffffff") if checked else QColor("#606060")
         for col in range(1, self._table.columnCount()):
             item = self._table.item(row, col)
@@ -833,94 +883,351 @@ class RuleDetailDialog(QDialog):
                 item.setForeground(color)
 
     def _on_strategy_changed(self, text: str):
-        self._pending_strategy = text
+        if self._core == "xray":
+            self._draft_data.setdefault("routing", {})["domainStrategy"] = text
+        else:
+            route = self._draft_data.setdefault("route", {})
+            if text:
+                route["default_domain_resolver"] = text
+            else:
+                route.pop("default_domain_resolver", None)
+
+    def _on_add_rule(self):
+        empty_rule = (
+            {"outboundTag": "direct"}
+            if self._core == "xray"
+            else {"outbound": "direct"}
+        )
+        dlg = RuleEditDialog(empty_rule, self._core, parent=self)
+        if dlg.exec():
+            new_rule = dlg.get_updated_rule()
+            if self._core == "xray":
+                self._draft_data.setdefault("routing", {}).setdefault("rules", []).append(new_rule)
+            else:
+                self._draft_data.setdefault("route", {}).setdefault("rules", []).append(new_rule)
+            rules, _ = self._get_rules_and_strategy(self._draft_data)
+            self._update_header(rules)
+            self._fill_table(rules)
 
     def _on_row_double_clicked(self, row: int, col: int):
         if self._core == "xray" and col == X_COL_ENABLED:
             return
-        data = self._load_data()
+        self._edit_row(row)
+
+    # ── Row selection / reorder ──
+
+    def _selected_rows(self) -> list[int]:
+        return sorted(i.row() for i in self._table.selectionModel().selectedRows())
+
+    def _selected_row(self) -> int | None:
+        rows = self._selected_rows()
+        return rows[0] if rows else None
+
+    def _get_draft_rules(self) -> list:
         if self._core == "xray":
-            rules = data.get("routing", {}).get("rules", [])
-        else:
-            rules = data.get("route", {}).get("rules", [])
+            return self._draft_data.get("routing", {}).get("rules", [])
+        return self._draft_data.get("route", {}).get("rules", [])
+
+    def _move_row(self, row: int, new_row: int) -> None:
+        rules = self._get_draft_rules()
+        if new_row < 0 or new_row >= len(rules):
+            return
+        rules.insert(new_row, rules.pop(row))
+        self._fill_table(rules)
+        self._table.selectRow(new_row)
+
+    def _on_context_menu(self, pos) -> None:
+        from PyQt6.QtWidgets import QMenu, QApplication
+        from PyQt6.QtGui import QKeySequence
+
+        clicked_row = self._table.rowAt(pos.y())
+        has_row = clicked_row >= 0
+        if has_row and clicked_row not in self._selected_rows():
+            self._table.selectRow(clicked_row)
+        row = self._selected_row()
+        rules = self._get_draft_rules()
+        n = len(rules)
+
+        MENU_STYLE = SHARED_STYLE + """
+        QMenu {
+            background-color: #252526;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            padding: 4px 0;
+        }
+        QMenu::item {
+            padding: 6px 32px 6px 16px;
+            font-size: 13px;
+            color: #cccccc;
+        }
+        QMenu::item:selected { background-color: #2d4a6e; color: #ffffff; }
+        QMenu::item:disabled { color: #555555; }
+        QMenu::separator {
+            height: 1px;
+            background: #3a3a3a;
+            margin: 3px 8px;
+        }
+        QMenu::shortcut { color: #888888; padding-left: 24px; }
+        """
+
+        menu = QMenu(self)
+        menu.setStyleSheet(MENU_STYLE)
+
+        add_action = menu.addAction("Add Rule")
+        remove_action = menu.addAction("Remove Rule")
+        remove_action.setShortcut(QKeySequence(Qt.Key.Key_Backspace))
+        remove_action.setEnabled(has_row)
+        menu.addSeparator()
+        select_all_action = menu.addAction("Select all")
+        select_all_action.setShortcut(QKeySequence("Ctrl+A"))
+        menu.addSeparator()
+        export_action = menu.addAction("Export Selected Rules")
+        export_action.setEnabled(has_row)
+        menu.addSeparator()
+        top_action = menu.addAction("Move to top")
+        top_action.setShortcut(QKeySequence(Qt.Key.Key_T))
+        top_action.setEnabled(has_row and row > 0)
+        up_action = menu.addAction("Up")
+        up_action.setShortcut(QKeySequence(Qt.Key.Key_U))
+        up_action.setEnabled(has_row and row > 0)
+        down_action = menu.addAction("Down")
+        down_action.setShortcut(QKeySequence(Qt.Key.Key_D))
+        down_action.setEnabled(has_row and row is not None and row < n - 1)
+        bottom_action = menu.addAction("Move to bottom")
+        bottom_action.setShortcut(QKeySequence(Qt.Key.Key_B))
+        bottom_action.setEnabled(has_row and row is not None and row < n - 1)
+        menu.addSeparator()
+        edit_action = menu.addAction("Edit")
+        edit_action.setEnabled(has_row)
+
+        chosen = menu.exec(self._table.viewport().mapToGlobal(pos))
+        if not chosen:
+            return
+        if chosen == add_action:
+            self._on_add_rule()
+        elif chosen == remove_action:
+            selected = self._selected_rows()
+            if selected:
+                self._delete_rows(selected)
+        elif chosen == select_all_action:
+            self._table.selectAll()
+        elif chosen == export_action:
+            self._export_selected_rules()
+        elif chosen == top_action and row is not None:
+            self._move_row(row, 0)
+        elif chosen == up_action and row is not None:
+            self._move_row(row, row - 1)
+        elif chosen == down_action and row is not None:
+            self._move_row(row, row + 1)
+        elif chosen == bottom_action and row is not None:
+            self._move_row(row, n - 1)
+        elif chosen == edit_action and row is not None:
+            self._edit_row(row)
+
+    def _edit_row(self, row: int) -> None:
+        rules = self._get_draft_rules()
         if row >= len(rules):
             return
-        rule = rules[row]
-        dlg = RuleEditDialog(rule, self._core, self._file_path, row, parent=self)
+        dlg = RuleEditDialog(rules[row], self._core, parent=self)
         if dlg.exec():
-            self._populate()
-            self.file_saved.emit(self._core, str(self._file_path))
+            rules[row] = dlg.get_updated_rule()
+            self._fill_table(rules)
+            self._table.selectRow(row)
+
+    def _delete_row(self, row: int) -> None:
+        self._delete_rows([row])
+
+    def _delete_rows(self, rows: list[int]) -> None:
+        rules = self._get_draft_rules()
+        for row in sorted(rows, reverse=True):
+            if row < len(rules):
+                rules.pop(row)
+        self._update_header(rules)
+        self._fill_table(rules)
+
+    def _export_selected_rules(self) -> None:
+        from PyQt6.QtWidgets import QApplication, QFileDialog
+        rows = self._selected_rows()
+        rules = self._get_draft_rules()
+        selected = [rules[r] for r in rows if r < len(rules)]
+        if not selected:
+            return
+        text = json.dumps(selected, ensure_ascii=False, indent=2)
+        from PyQt6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Rules", "rules.json", "JSON files (*.json)"
+        )
+        if path:
+            Path(path).write_text(text, encoding="utf-8")
+
+    # ── Import helpers ──
+
+    _RULE_KNOWN_KEYS = frozenset({
+        "outboundTag", "outbound", "action",
+        "domain", "domain_suffix", "domain_keyword", "domain_regex",
+        "ip", "ip_cidr", "source_ip_cidr", "geoip", "ip_is_private",
+        "port", "network", "protocol",
+        "process", "process_name",
+        "inboundTag",
+        "remarks", "enabled",
+    })
+
+    def _parse_rules_from_text(self, text: str) -> tuple[list[dict], str]:
+        """Parse JSON text into a list of rule dicts. Returns (rules, error_message)."""
+        text = text.strip()
+        if not text:
+            return [], "Пустой ввод"
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            return [], f"Неверный JSON: {e}"
+
+        if isinstance(data, dict):
+            candidates = [data]
+        elif isinstance(data, list):
+            candidates = data
+        else:
+            return [], "JSON должен быть объектом или массивом объектов"
+
+        valid: list[dict] = []
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            # Accept if has at least one known routing key
+            if self._RULE_KNOWN_KEYS & item.keys():
+                valid.append(item)
+
+        if not valid:
+            return [], "Нет валидных правил (нужны поля: outboundTag, domain, ip, port, process и т.д.)"
+        return valid, ""
+
+    def _import_rules(self, text: str) -> None:
+        rules, err = self._parse_rules_from_text(text)
+        if err:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Import", err)
+            return
+        if self._core == "xray":
+            target = self._draft_data.setdefault("routing", {}).setdefault("rules", [])
+        else:
+            target = self._draft_data.setdefault("route", {}).setdefault("rules", [])
+        target.extend(rules)
+        all_rules, _ = self._get_rules_and_strategy(self._draft_data)
+        self._update_header(all_rules)
+        self._fill_table(all_rules)
+
+    def _on_import_clipboard(self) -> None:
+        from PyQt6.QtWidgets import QApplication
+        cb = QApplication.clipboard()
+        text = cb.text().strip() if cb else ""
+        if not text:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Import", "Буфер обмена пуст")
+            return
+        self._import_rules(text)
+
+    def _on_import_file(self) -> None:
+        from PyQt6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Импорт правил из файла", "", "JSON files (*.json);;All files (*)"
+        )
+        if not path:
+            return
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except Exception as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Import", f"Не удалось прочитать файл: {e}")
+            return
+        self._import_rules(text)
 
     def _on_confirm(self):
-        if not self._pending_enabled and self._pending_strategy is None:
-            self.accept()
-            return
-
         try:
-            data = _load_json(self._file_path)
+            self._watcher.removePath(str(self._file_path))
+            _save_json(self._file_path, self._draft_data)
+            self._watcher.addPath(str(self._file_path))
         except Exception as e:
-            print(f"[routing] Failed to read JSON for saving: {e}")
+            print(f"[routing] Failed to save JSON: {e}")
             return
-
-        changed = False
-
-        if self._pending_strategy is not None:
-            if self._core == "xray":
-                routing = data.setdefault("routing", {})
-                if routing.get("domainStrategy") != self._pending_strategy:
-                    routing["domainStrategy"] = self._pending_strategy
-                    changed = True
-            else:
-                route = data.setdefault("route", {})
-                if route.get("default_domain_resolver") != self._pending_strategy:
-                    if self._pending_strategy:
-                        route["default_domain_resolver"] = self._pending_strategy
-                    else:
-                        route.pop("default_domain_resolver", None)
-                    changed = True
-
-        if self._pending_enabled:
-            if self._core == "xray":
-                rules = data.get("routing", {}).get("rules", [])
-            else:
-                rules = data.get("route", {}).get("rules", [])
-
-            for row_idx, enabled_val in self._pending_enabled.items():
-                if row_idx < len(rules):
-                    rule = rules[row_idx]
-                    current = bool(rule.get("enabled", True))
-                    if current != enabled_val:
-                        if enabled_val:
-                            rule.pop("enabled", None)
-                        else:
-                            rule["enabled"] = False
-                        changed = True
-
-        if changed:
-            try:
-                self._watcher.removePath(str(self._file_path))
-                _save_json(self._file_path, data)
-                self._watcher.addPath(str(self._file_path))
-                self._original_data = copy.deepcopy(data)
-            except Exception as e:
-                print(f"[routing] Failed to save JSON: {e}")
-                return
-
-        self._pending_enabled.clear()
-        self._pending_strategy = None
         self.file_saved.emit(self._core, str(self._file_path))
         self.accept()
 
     def _on_cancel(self):
-        self._pending_enabled.clear()
-        self._pending_strategy = None
         self.reject()
+
+    def _update_header(self, rules: list) -> None:
+        self._header_label.setText(
+            f"<b>{self._config_name}</b>"
+            f" &nbsp;·&nbsp; {len(rules)} rules"
+            f" &nbsp;·&nbsp; core: {self._core}"
+        )
+
+    # Windows VK codes — layout-independent (physical key position)
+    _VK_A = 0x41
+    _VK_B = 0x42
+    _VK_D = 0x44
+    _VK_T = 0x54
+    _VK_U = 0x55
+
+    def eventFilter(self, obj, event) -> bool:
+        from PyQt6.QtCore import QEvent
+        if obj is not self._table or event.type() != QEvent.Type.KeyPress:
+            return super().eventFilter(obj, event)
+
+        key = event.key()
+        vk = event.nativeVirtualKey()
+        modifiers = event.modifiers()
+
+        if modifiers == Qt.KeyboardModifier.ControlModifier and vk == self._VK_A:
+            self._table.selectAll()
+            return True
+
+        # Let arrow keys pass through for native row navigation
+        if key in (Qt.Key.Key_Up, Qt.Key.Key_Down,
+                   Qt.Key.Key_PageUp, Qt.Key.Key_PageDown,
+                   Qt.Key.Key_Home, Qt.Key.Key_End):
+            return False
+
+        row = self._selected_row()
+        rules = self._get_draft_rules()
+        n = len(rules)
+
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if row is not None:
+                self._edit_row(row)
+            return True
+
+        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            rows = self._selected_rows()
+            if rows:
+                self._delete_rows(rows)
+            return True
+
+        if vk == self._VK_T:
+            if row is not None and row > 0:
+                self._move_row(row, 0)
+            return True
+
+        if vk == self._VK_U:
+            if row is not None and row > 0:
+                self._move_row(row, row - 1)
+            return True
+
+        if vk == self._VK_D:
+            if row is not None and row < n - 1:
+                self._move_row(row, row + 1)
+            return True
+
+        if vk == self._VK_B:
+            if row is not None and row < n - 1:
+                self._move_row(row, n - 1)
+            return True
+
+        return False
 
     def _on_file_changed(self, path: str):
         if path not in self._watcher.files():
             self._watcher.addPath(path)
-        if not self._pending_enabled and self._pending_strategy is None:
-            self._populate()
 
 
 class RoutingPage(QWidget):
@@ -945,10 +1252,10 @@ class RoutingPage(QWidget):
         root.addWidget(self.stack)
 
         self.singbox_table = QTableWidget()
-        self.xray_table    = QTableWidget()
+        self.xray_table = QTableWidget()
 
         self._file_paths[self.singbox_table] = []
-        self._file_paths[self.xray_table]    = []
+        self._file_paths[self.xray_table] = []
 
         self.stack.addWidget(self.singbox_table)
         self.stack.addWidget(self.xray_table)
@@ -1020,11 +1327,11 @@ class RoutingPage(QWidget):
 
     def refresh(self):
         self._load_core("singbox", self.singbox_table)
-        self._load_core("xray",    self.xray_table)
+        self._load_core("xray", self.xray_table)
 
     def _load_core(self, core: str, table: QTableWidget):
         folder = self.core_dirs.get(core, core)
-        path   = self.base_path / folder
+        path = self.base_path / folder
 
         table.setRowCount(0)
         self._file_paths[table] = []
@@ -1042,7 +1349,7 @@ class RoutingPage(QWidget):
             return
 
         for f in files:
-            name  = f.relative_to(path).as_posix().replace(".json", "")
+            name = f.relative_to(path).as_posix().replace(".json", "")
             count = len(self._get_rules(f, core))
             self._add_row(table, name, str(count))
             self._file_paths[table].append(f)
@@ -1058,11 +1365,13 @@ class RoutingPage(QWidget):
         if row >= len(paths) or paths[row] is None:
             return
 
-        file_path   = paths[row]
-        folder      = self.core_dirs.get(core, core)
-        config_name = file_path.relative_to(
-            self.base_path / folder
-        ).as_posix().replace(".json", "")
+        file_path = paths[row]
+        folder = self.core_dirs.get(core, core)
+        config_name = (
+            file_path.relative_to(self.base_path / folder)
+            .as_posix()
+            .replace(".json", "")
+        )
 
         dialog = RuleDetailDialog(config_name, file_path, core, parent=self)
         dialog.file_saved.connect(self.file_saved)

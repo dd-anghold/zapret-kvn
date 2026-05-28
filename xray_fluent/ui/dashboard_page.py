@@ -68,6 +68,7 @@ class DashboardPage(QWidget):
     mode_changed = pyqtSignal(str)
     tun_toggled = pyqtSignal(bool)
     proxy_toggled = pyqtSignal(bool)
+    config_selected = pyqtSignal(str, str)  # (core, relative_path)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -93,6 +94,8 @@ class DashboardPage(QWidget):
         self._down_history: deque[float] = deque(maxlen=300)
         self._up_history: deque[float] = deque(maxlen=300)
         self._last_process_stats: list | None = None
+        self._config_combo_updating = False
+        self._config_core = "xray"
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -273,6 +276,14 @@ class DashboardPage(QWidget):
         routing_layout.setContentsMargins(18, 16, 18, 16)
         routing_layout.setSpacing(8)
         routing_layout.addWidget(StrongBodyLabel("Маршрутизация", self.routing_card))
+        config_row = QHBoxLayout()
+        config_row.setSpacing(8)
+        self._config_label = CaptionLabel("Конфиг:", self.routing_card)
+        self._config_combo = ComboBox(self.routing_card)
+        self._config_combo.setMinimumWidth(140)
+        config_row.addWidget(self._config_label)
+        config_row.addWidget(self._config_combo, 1)
+        routing_layout.addLayout(config_row)
         self.mode_combo = ComboBox(self.routing_card)
         self.mode_combo.addItem("Глобальный", userData="global")
         self.mode_combo.addItem("Правила", userData="rule")
@@ -370,6 +381,7 @@ class DashboardPage(QWidget):
         # ── Signal connections ────────────────────────────────
         self.node_combo.currentIndexChanged.connect(self._on_node_changed)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        self._config_combo.currentIndexChanged.connect(self._on_config_combo_changed)
         self.tun_switch.checkedChanged.connect(self._on_tun_toggled)
         self.proxy_switch.checkedChanged.connect(self._on_proxy_toggled)
         self.toggle_btn.clicked.connect(self.toggle_connection_requested)
@@ -476,6 +488,23 @@ class DashboardPage(QWidget):
     def set_routing_snapshot(self, routing: RoutingSettings) -> None:
         self._routing = routing
         self.set_mode(routing.mode)
+
+    def set_available_configs(self, core: str, items: list[tuple[str, str]], selected: str) -> None:
+        self._config_core = core
+        self._config_combo_updating = True
+        self._config_combo.blockSignals(True)
+        try:
+            self._config_combo.clear()
+            sel_idx = 0
+            for i, (value, label) in enumerate(items):
+                self._config_combo.addItem(label, userData=value)
+                if value == selected:
+                    sel_idx = i
+            if items:
+                self._config_combo.setCurrentIndex(sel_idx)
+        finally:
+            self._config_combo.blockSignals(False)
+            self._config_combo_updating = False
 
     def set_selected_latency(self, value: int | None) -> None:
         self._selected_latency_ms = value
@@ -832,3 +861,11 @@ class DashboardPage(QWidget):
         self.tun_switch.setEnabled(not busy)
         self.mode_combo.setEnabled(not busy and self._is_tun2socks_mode())
         self.proxy_switch.setEnabled(not busy and not self._settings.tun_mode)
+        self._config_combo.setEnabled(not busy)
+
+    def _on_config_combo_changed(self, index: int) -> None:
+        if self._config_combo_updating:
+            return
+        value = self._config_combo.itemData(index)
+        if value:
+            self.config_selected.emit(self._config_core, str(value))

@@ -6,23 +6,25 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QItemSelectionModel
 from PyQt6.QtGui import QCursor, QKeyEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QHBoxLayout, QHeaderView,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
     ComboBox,
     FluentIcon as FIF,
     IndeterminateProgressRing,
+    LineEdit,
     ProgressBar,
     PrimaryToolButton,
     SearchLineEdit,
     SubtitleLabel,
     TableView,
+    ToolButton,
     TransparentToolButton,
     VerticalSeparator,
 )
-from qfluentwidgets import RoundMenu, Action
+from qfluentwidgets import RoundMenu, Action, MessageBox
 
-from ..models import Node
+from ..models import Node, Subscription
 from .node_detail_widget import NodeDetailWidget
 from .nodes_table_model import NodesTableModel
 
@@ -62,12 +64,18 @@ class NodesPage(QWidget):
     bulk_edit_requested = pyqtSignal(object)        # set[str] of node_ids
     copy_link_requested = pyqtSignal(str)           # node_id
     reorder_requested = pyqtSignal(str, str)        # node_id, direction
+    import_subscription_requested = pyqtSignal(str, str)   # url, name
+    update_subscription_requested = pyqtSignal(str)        # sub_id
+    remove_subscription_requested = pyqtSignal(str)        # sub_id
+    rename_subscription_requested = pyqtSignal(str, str)   # sub_id, new_name
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("nodes")
 
         self._nodes: list[Node] = []
+        self._subscriptions: list[Subscription] = []
+        self._active_sub_id: str | None = None   # None = show all
         self._visible_node_ids: list[str] = []
         self._id_to_node: dict[str, Node] = {}
         self._search_haystacks: dict[str, str] = {}
@@ -78,6 +86,8 @@ class NodesPage(QWidget):
         self._active_speed_progress: dict[str, int] = {}
         self._speed_test_running = False
         self._speed_test_stopping = False
+        self._in_reload = False
+        self._active_node_id: str | None = None  # which node is the VPN endpoint
 
         # Stack: page 0 = server list, page 1 = node detail
         self._stack = QStackedWidget(self)
@@ -93,6 +103,26 @@ class NodesPage(QWidget):
 
         title = SubtitleLabel("Серверы", self)
         root.addWidget(title)
+
+        # --- Subscription chips row ---
+        sub_scroll = QScrollArea(self)
+        sub_scroll.setObjectName("subScrollArea")
+        sub_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        sub_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sub_scroll.setWidgetResizable(True)
+        sub_scroll.setFixedHeight(40)
+        sub_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        sub_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        self._sub_chips_container = QWidget()
+        self._sub_chips_container.setStyleSheet("background: transparent;")
+        self._sub_chips_layout = QHBoxLayout(self._sub_chips_container)
+        self._sub_chips_layout.setContentsMargins(0, 0, 0, 0)
+        self._sub_chips_layout.setSpacing(6)
+        self._sub_chips_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        sub_scroll.setWidget(self._sub_chips_container)
+        root.addWidget(sub_scroll)
+        self._sub_scroll = sub_scroll
 
         # --- Filter row ---
         filter_row = QHBoxLayout()
@@ -281,7 +311,17 @@ class NodesPage(QWidget):
         paste_shortcut = QShortcut(QKeySequence.StandardKey.Paste, self)
         paste_shortcut.activated.connect(self.import_clipboard_requested)
 
+        # Build initial (empty) chip row
+        self._rebuild_sub_chips()
+
     # ── Public API ──
+
+    def set_subscriptions(self, subscriptions: list[Subscription]) -> None:
+        self._subscriptions = list(subscriptions)
+        if self._active_sub_id and not any(s.id == self._active_sub_id for s in self._subscriptions):
+            self._active_sub_id = None
+        self._rebuild_sub_chips()
+        self._reload()
 
     def set_nodes(self, nodes: list[Node], selected_id: str | None = None) -> None:
         self._nodes = list(nodes)
@@ -290,10 +330,10 @@ class NodesPage(QWidget):
             node.id: " ".join([node.name, node.scheme, node.server, node.group, " ".join(node.tags)]).lower()
             for node in self._nodes
         }
+        if selected_id is not None:
+            self._active_node_id = selected_id
         self._rebuild_filter_combos()
         self._reload()
-        if selected_id and selected_id not in self._selected_ids():
-            self._select_node(selected_id)
 
     def update_ping(self, node_id: str, ping_ms: int | None) -> None:
         self._pending_ping_ids.discard(node_id)
@@ -314,6 +354,160 @@ class NodesPage(QWidget):
         """Refresh detail view if it is currently visible."""
         if self._stack.currentIndex() == 1:
             self._detail_widget.refresh()
+
+    # ── Subscription chips ──
+
+    _CHIP_BASE = (
+        "QPushButton {"
+        "  border: 1px solid #555;"
+        "  border-radius: 12px;"
+        "  padding: 2px 14px;"
+        "  background: transparent;"
+        "  color: palette(text);"
+        "  font-size: 13px;"
+        "}"
+        "QPushButton:hover { background: rgba(255,255,255,0.06); }"
+        "QPushButton:checked {"
+        "  background: #0078D4;"
+        "  border-color: #0078D4;"
+        "  color: white;"
+        "}"
+    )
+
+    def _rebuild_sub_chips(self) -> None:
+        layout = self._sub_chips_layout
+        while layout.count():
+            item = layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+
+        all_btn = self._make_chip("Все", None)
+        all_btn.setChecked(self._active_sub_id is None)
+        layout.addWidget(all_btn)
+
+        for sub in self._subscriptions:
+            btn = self._make_chip(sub.name or sub.url, sub.id)
+            btn.setChecked(self._active_sub_id == sub.id)
+            btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            btn.customContextMenuRequested.connect(
+                lambda pos, sid=sub.id: self._on_sub_chip_context(sid)
+            )
+            layout.addWidget(btn)
+
+        add_btn = TransparentToolButton(FIF.ADD, self._sub_chips_container)
+        add_btn.setFixedSize(28, 28)
+        add_btn.setToolTip("Добавить подписку")
+        add_btn.clicked.connect(self._on_add_subscription)
+        layout.addWidget(add_btn)
+
+        layout.addStretch()
+
+        # Hide entire row when no subscriptions and chips would be trivial
+        self._sub_scroll.setVisible(True)
+
+    def _make_chip(self, label: str, sub_id: str | None) -> "QPushButton":
+        from PyQt6.QtWidgets import QPushButton
+        btn = QPushButton(label, self._sub_chips_container)
+        btn.setCheckable(True)
+        btn.setFixedHeight(28)
+        btn.setStyleSheet(self._CHIP_BASE)
+        btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        btn.clicked.connect(lambda checked, sid=sub_id: self._on_sub_chip_clicked(sid))
+        return btn
+
+    def _on_sub_chip_clicked(self, sub_id: str | None) -> None:
+        self._active_sub_id = sub_id
+        self._rebuild_sub_chips()
+        self._reload()
+
+    def _on_sub_chip_context(self, sub_id: str) -> None:
+        sub = next((s for s in self._subscriptions if s.id == sub_id), None)
+        if sub is None:
+            return
+        menu = RoundMenu(parent=self)
+        update_action = Action("Обновить", self)
+        update_action.triggered.connect(lambda: self.update_subscription_requested.emit(sub_id))
+        menu.addAction(update_action)
+        rename_action = Action("Переименовать", self)
+        rename_action.triggered.connect(lambda: self._on_rename_subscription(sub_id, sub.name))
+        menu.addAction(rename_action)
+        menu.addSeparator()
+        delete_action = Action("Удалить подписку", self)
+        delete_action.triggered.connect(lambda: self._on_delete_subscription(sub_id, sub.name))
+        menu.addAction(delete_action)
+        menu.exec(QCursor.pos())
+
+    def _on_add_subscription_prefilled(self, url: str) -> None:
+        self._on_add_subscription(prefill_url=url)
+
+    def _on_add_subscription(self, *, prefill_url: str = "") -> None:
+        from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLabel
+        dlg = QDialog(self.window())
+        dlg.setWindowTitle("Добавить подписку")
+        dlg.setMinimumWidth(420)
+        form = QFormLayout(dlg)
+        form.setSpacing(10)
+        form.setContentsMargins(16, 16, 16, 16)
+        url_edit = LineEdit(dlg)
+        url_edit.setPlaceholderText("https://example.com/sub/token")
+        if prefill_url:
+            url_edit.setText(prefill_url)
+        name_edit = LineEdit(dlg)
+        name_edit.setPlaceholderText("Моя подписка")
+        form.addRow(QLabel("URL подписки:"), url_edit)
+        form.addRow(QLabel("Название:"), name_edit)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dlg
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        url = url_edit.text().strip()
+        name = name_edit.text().strip()
+        if not url:
+            return
+        if not name:
+            from urllib.parse import urlsplit
+            name = urlsplit(url).netloc or url[:40]
+        self.import_subscription_requested.emit(url, name)
+
+    def _on_rename_subscription(self, sub_id: str, current_name: str) -> None:
+        from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLabel
+        dlg = QDialog(self.window())
+        dlg.setWindowTitle("Переименовать подписку")
+        dlg.setMinimumWidth(320)
+        form = QFormLayout(dlg)
+        form.setSpacing(10)
+        form.setContentsMargins(16, 16, 16, 16)
+        name_edit = LineEdit(dlg)
+        name_edit.setText(current_name)
+        form.addRow(QLabel("Новое название:"), name_edit)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dlg
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_name = name_edit.text().strip()
+        if new_name and new_name != current_name:
+            self.rename_subscription_requested.emit(sub_id, new_name)
+
+    def _on_delete_subscription(self, sub_id: str, name: str) -> None:
+        box = MessageBox(
+            "Удалить подписку",
+            f"Удалить подписку «{name}» и все её серверы?",
+            self.window(),
+        )
+        box.yesButton.setText("Удалить")
+        box.cancelButton.setText("Отмена")
+        if box.exec():
+            if self._active_sub_id == sub_id:
+                self._active_sub_id = None
+            self.remove_subscription_requested.emit(sub_id)
 
     # ── Filter combos ──
 
@@ -353,13 +547,14 @@ class NodesPage(QWidget):
     # ── Reload / filter / sort ──
 
     def _reload(self) -> None:
-        prev_selected = self._selected_ids()
         query = self.search_edit.text().strip().lower()
         group_filter = self.group_filter.currentText()
         tag_filter = self.tag_filter.currentText()
 
         filtered = []
         for node in self._nodes:
+            if self._active_sub_id is not None and node.subscription_id != self._active_sub_id:
+                continue
             if group_filter != "Все группы" and node.group != group_filter:
                 continue
             if tag_filter != "Все теги" and tag_filter not in node.tags:
@@ -375,26 +570,31 @@ class NodesPage(QWidget):
 
         self._visible_node_ids = [node.id for node in filtered]
 
+        self._in_reload = True
         self.table.setUpdatesEnabled(False)
-        self._table_model.set_nodes(filtered)
-        selection_model = self.table.selectionModel()
-        if selection_model is not None:
-            selection_model.blockSignals(True)
-            selection_model.clearSelection()
-            for row, nid in enumerate(self._visible_node_ids):
-                if nid not in prev_selected:
-                    continue
-                index = self._table_model.index(row, 0)
-                if not index.isValid():
-                    continue
-                selection_model.select(
-                    index,
-                    QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
-                )
-            selection_model.blockSignals(False)
-        self.table.setUpdatesEnabled(True)
-        self._apply_activity_widgets()
+        try:
+            self._table_model.set_nodes(filtered)
+            selection_model = self.table.selectionModel()
+            if selection_model is not None:
+                selection_model.clearSelection()
+                selection_model.clearCurrentIndex()
+                # Restore selection based on the actual active VPN node, not
+                # previous click position — avoids wrong-row highlight when
+                # the user switches subscription tabs.
+                if self._active_node_id and self._active_node_id in self._visible_node_ids:
+                    row = self._visible_node_ids.index(self._active_node_id)
+                    index = self._table_model.index(row, 0)
+                    if index.isValid():
+                        selection_model.select(
+                            index,
+                            QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+                        )
+        finally:
+            self.table.setUpdatesEnabled(True)
+            self.table.viewport().update()
+            self._in_reload = False
 
+        self._apply_activity_widgets()
         self._emit_selection()
 
     def start_ping_activity(self, node_ids: set[str] | None = None) -> None:
@@ -584,13 +784,17 @@ class NodesPage(QWidget):
             self.table.selectRow(row)
 
     def _emit_selection(self) -> None:
+        if self._in_reload:
+            return
         ids = self._selected_ids()
         self.bulk_edit_btn.setVisible(len(ids) > 1)
         is_manual = self.sort_combo.currentText() == "Вручную"
         self.move_up_btn.setEnabled(is_manual and len(ids) == 1)
         self.move_down_btn.setEnabled(is_manual and len(ids) == 1)
         if len(ids) == 1:
-            self.selected_node_changed.emit(next(iter(ids)))
+            node_id = next(iter(ids))
+            self._active_node_id = node_id  # track user click → drives selection on reload
+            self.selected_node_changed.emit(node_id)
 
     # ── Button handlers ──
 

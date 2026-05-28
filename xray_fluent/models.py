@@ -13,6 +13,31 @@ def utc_now_iso() -> str:
 
 
 @dataclass(slots=True)
+class Subscription:
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ""
+    url: str = ""
+    last_updated_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "url": self.url,
+            "last_updated_at": self.last_updated_at,
+        }
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> "Subscription":
+        return Subscription(
+            id=str(data.get("id") or uuid.uuid4()),
+            name=str(data.get("name") or ""),
+            url=str(data.get("url") or ""),
+            last_updated_at=data.get("last_updated_at"),
+        )
+
+
+@dataclass(slots=True)
 class Node:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = ""
@@ -32,6 +57,7 @@ class Node:
     ping_history: list[tuple[str, int | None]] = field(default_factory=list)
     speed_history: list[tuple[str, float | None]] = field(default_factory=list)
     sort_order: int = 0
+    subscription_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -53,6 +79,7 @@ class Node:
             "ping_history": self.ping_history,
             "speed_history": self.speed_history,
             "sort_order": self.sort_order,
+            "subscription_id": self.subscription_id,
         }
 
     @staticmethod
@@ -76,6 +103,7 @@ class Node:
             ping_history=data.get("ping_history", []),
             speed_history=data.get("speed_history", []),
             sort_order=int(data.get("sort_order", 0)),
+            subscription_id=data.get("subscription_id"),
         )
 
 
@@ -191,6 +219,7 @@ class AppSettings:
     window_y: int = -1
     zapret_preset: str = ""
     zapret_autostart: bool = False
+    zapret_session_running: bool = False
     auto_switch_enabled: bool = True
     auto_switch_threshold_kbps: int = 50
     auto_switch_delay_sec: int = 30
@@ -228,6 +257,7 @@ class AppSettings:
             "window_y": self.window_y,
             "zapret_preset": self.zapret_preset,
             "zapret_autostart": self.zapret_autostart,
+            "zapret_session_running": self.zapret_session_running,
             "auto_switch_enabled": self.auto_switch_enabled,
             "auto_switch_threshold_kbps": self.auto_switch_threshold_kbps,
             "auto_switch_delay_sec": self.auto_switch_delay_sec,
@@ -267,6 +297,7 @@ class AppSettings:
             window_y=int(data.get("window_y", -1)),
             zapret_preset=str(data.get("zapret_preset") or ""),
             zapret_autostart=bool(data.get("zapret_autostart", False)),
+            zapret_session_running=bool(data.get("zapret_session_running", False)),
             auto_switch_enabled=bool(data.get("auto_switch_enabled", True)),
             auto_switch_threshold_kbps=int(data.get("auto_switch_threshold_kbps") or 50),
             auto_switch_delay_sec=int(data.get("auto_switch_delay_sec") or 30),
@@ -282,6 +313,7 @@ class AppState:
     routing: RoutingSettings = field(default_factory=RoutingSettings)
     settings: AppSettings = field(default_factory=AppSettings)
     security: SecuritySettings = field(default_factory=SecuritySettings)
+    subscriptions: list[Subscription] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -291,12 +323,15 @@ class AppState:
             "routing": self.routing.to_dict(),
             "settings": self.settings.to_dict(),
             "security": self.security.to_dict(),
+            "subscriptions": [s.to_dict() for s in self.subscriptions],
         }
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> "AppState":
         nodes_raw = data.get("nodes") or []
         nodes = [Node.from_dict(item) for item in nodes_raw if isinstance(item, dict)]
+        subs_raw = data.get("subscriptions") or []
+        subscriptions = [Subscription.from_dict(item) for item in subs_raw if isinstance(item, dict)]
         return AppState(
             schema_version=int(data.get("schema_version") or STATE_SCHEMA_VERSION),
             selected_node_id=data.get("selected_node_id"),
@@ -304,4 +339,5 @@ class AppState:
             routing=RoutingSettings.from_dict(dict(data.get("routing") or {})),
             settings=AppSettings.from_dict(dict(data.get("settings") or {})),
             security=SecuritySettings.from_dict(dict(data.get("security") or {})),
+            subscriptions=subscriptions,
         )

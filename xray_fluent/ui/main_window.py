@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QFileSystemWatcher, QTimer
 from PyQt6.QtGui import QAction, QActionGroup, QCloseEvent, QGuiApplication, QIcon
 from PyQt6.QtWidgets import QApplication, QDialog, QFileDialog, QMenu, QSystemTrayIcon
 from qfluentwidgets import (
@@ -219,9 +219,25 @@ class MainWindow(FluentWindow):
         self.nodes_page.export_runtime_json_requested.connect(self._export_runtime_json)
         self.nodes_page.edit_node_requested.connect(self._on_edit_node)
         self.nodes_page.bulk_edit_requested.connect(self._on_bulk_edit_nodes)
+        self.nodes_page.import_subscription_requested.connect(
+            self._on_import_subscription
+        )
+        self.nodes_page.update_subscription_requested.connect(
+            self._on_update_subscription
+        )
+        self.nodes_page.remove_subscription_requested.connect(
+            self.controller.remove_subscription
+        )
+        self.nodes_page.rename_subscription_requested.connect(
+            self.controller.rename_subscription
+        )
+        self.controller.subscriptions_changed.connect(
+            self.nodes_page.set_subscriptions
+        )
 
         self.configs_page.open_requested.connect(self._open_core_config)
         self.configs_page.config_selected.connect(self._select_core_config)
+        self.dashboard_page.config_selected.connect(self._select_core_config)
         self.configs_page.template_selected.connect(self._select_core_template)
         self.configs_page.reset_requested.connect(self._reset_core_config_to_template)
         self.configs_page.save_requested.connect(self._save_core_config)
@@ -316,6 +332,56 @@ class MainWindow(FluentWindow):
         self.dashboard_page.set_nodes(nodes, selected_id)
         self._refresh_tray_tooltip()
 
+    def _on_import_subscription(self, url: str, name: str) -> None:
+        added, errors = self.controller.import_subscription(url, name)
+        if errors:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.warning(
+                "Подписка",
+                "\n".join(errors[:3]),
+                duration=6000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
+        if added > 0:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.success(
+                "Подписка добавлена",
+                f"Импортировано серверов: {added}",
+                duration=4000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
+        elif not errors:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.warning(
+                "Подписка",
+                "Новых серверов не найдено",
+                duration=4000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
+
+    def _on_update_subscription(self, sub_id: str) -> None:
+        added, removed, errors = self.controller.update_subscription(sub_id)
+        if errors:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.warning(
+                "Обновление подписки",
+                "\n".join(errors[:3]),
+                duration=6000,
+                position=InfoBarPosition.TOP_RIGHT,
+                parent=self,
+            )
+        from qfluentwidgets import InfoBar, InfoBarPosition
+        InfoBar.success(
+            "Подписка обновлена",
+            f"Добавлено: {added}, удалено: {removed}",
+            duration=4000,
+            position=InfoBarPosition.TOP_RIGHT,
+            parent=self,
+        )
+
     def _on_selection_changed(self, node: Node | None) -> None:
         self.dashboard_page.set_selected_node(node)
         if node:
@@ -330,9 +396,23 @@ class MainWindow(FluentWindow):
             self._deferred_dashboard_metrics = None
             self._deferred_process_stats = None
             self._has_deferred_process_stats = False
+        else:
+            self._maybe_autostart_zapret()
         if self.tray_connect_action is not None:
             self.tray_connect_action.setText("Отключить" if connected else "Подключить")
         self._refresh_tray_tooltip()
+
+    def _maybe_autostart_zapret(self) -> None:
+        settings = self.controller.state.settings
+        if not settings.zapret_session_running:
+            return
+        preset = settings.zapret_preset
+        if not preset or self.controller.zapret.running:
+            return
+        from ..zapret_manager import ZapretManager
+        if not any(p.name == preset for p in ZapretManager.list_preset_infos()):
+            return
+        QTimer.singleShot(500, lambda: self._on_zapret_start(preset))
 
     def _on_transition_state_changed(self, busy: bool, _message: str) -> None:
         self.dashboard_page.set_transition_busy(busy)
@@ -354,6 +434,7 @@ class MainWindow(FluentWindow):
         self.dashboard_page.set_settings_snapshot(settings)
         self._apply_window_geometry(settings)
         self._apply_theme(settings.theme, settings.accent_color)
+        self._refresh_dashboard_config_choices()
         routing_controls_enabled = bool(
             settings.tun_mode and settings.tun_engine == "tun2socks"
         )
@@ -547,6 +628,11 @@ class MainWindow(FluentWindow):
             self._show_status("warning", "Буфер обмена пуст")
             return
 
+        # Single http/https line → treat as subscription URL
+        if "\n" not in text and text.lower().startswith(("http://", "https://")):
+            self.nodes_page._on_add_subscription_prefilled(text)
+            return
+
         added, errors = self.controller.import_nodes_from_text(text)
         if added:
             self._show_status("success", f"Импортировано серверов: {added}")
@@ -703,6 +789,14 @@ class MainWindow(FluentWindow):
             template_items,
             self._get_active_core_profile_relative(core, "template"),
         )
+        self._refresh_dashboard_config_choices()
+
+    def _refresh_dashboard_config_choices(self) -> None:
+        settings = self.controller.state.settings
+        core = "singbox" if (settings.tun_mode and settings.tun_engine == "singbox") else "xray"
+        items = self._list_core_profile_items(core, "config")
+        active = self._get_active_core_profile_relative(core, "config")
+        self.dashboard_page.set_available_configs(core, items, active)
 
     def _sync_core_template_for_config(
         self, core: str, config_path: Path
@@ -728,6 +822,35 @@ class MainWindow(FluentWindow):
     def _load_config_editor_documents(self) -> None:
         for core in ("singbox", "xray"):
             self._load_core_config_document(core)
+        self._setup_config_dir_watcher()
+
+    def _setup_config_dir_watcher(self) -> None:
+        if hasattr(self, "_config_dir_watcher"):
+            return
+        self._config_dir_watcher = QFileSystemWatcher(self)
+        self._config_dir_to_core: dict[str, str] = {}
+        for core in ("singbox", "xray"):
+            for kind in ("config", "template"):
+                d = self._get_core_profile_dir(core, kind)
+                d.mkdir(parents=True, exist_ok=True)
+                key = str(d.resolve())
+                self._config_dir_to_core[key] = core
+                self._config_dir_watcher.addPath(key)
+        self._config_dir_watcher.directoryChanged.connect(self._on_config_dir_changed)
+
+    def _on_config_dir_changed(self, changed_path: str) -> None:
+        core = self._config_dir_to_core.get(changed_path)
+        if core:
+            self._refresh_core_profile_choices(core)
+            return
+        # Try resolving symlinks / path variants
+        try:
+            resolved = str(Path(changed_path).resolve())
+        except Exception:
+            return
+        core = self._config_dir_to_core.get(resolved)
+        if core:
+            self._refresh_core_profile_choices(core)
 
     def _load_core_config_document(self, core: str) -> None:
         try:
@@ -995,9 +1118,14 @@ class MainWindow(FluentWindow):
     def _on_zapret_started(self) -> None:
         active = self.controller.state.settings.zapret_preset
         self.zapret_page.set_running(True, active)
+        self.controller.state.settings.zapret_session_running = True
+        self.controller.save()
 
     def _on_zapret_stopped(self) -> None:
         self.zapret_page.set_running(False)
+        if not self._quitting:
+            self.controller.state.settings.zapret_session_running = False
+            self.controller.save()
 
     def _on_zapret_error(self, message: str) -> None:
         self.zapret_page.set_error(message)
