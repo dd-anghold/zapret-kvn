@@ -25,7 +25,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from .constants import APP_VERSION, BASE_DIR
 
-GITHUB_REPO = "youtubediscord/zapret-kvn"
+GITHUB_REPO = "dd-anghold/zapret-kvn"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 USER_AGENT = f"ZapretKVN/{APP_VERSION}"
 
