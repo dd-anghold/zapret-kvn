@@ -195,6 +195,7 @@ class AppSettings:
     start_minimized: bool = False
     enable_system_proxy: bool = True
     system_proxy_bypass_lan: bool = True
+    system_proxy_override: str = ""
     launch_on_startup: bool = False
     reconnect_on_network_change: bool = True
     xray_path: str = ""
@@ -233,6 +234,7 @@ class AppSettings:
             "start_minimized": self.start_minimized,
             "enable_system_proxy": self.enable_system_proxy,
             "system_proxy_bypass_lan": self.system_proxy_bypass_lan,
+            "system_proxy_override": self.system_proxy_override,
             "launch_on_startup": self.launch_on_startup,
             "reconnect_on_network_change": self.reconnect_on_network_change,
             "xray_path": self.xray_path,
@@ -273,6 +275,7 @@ class AppSettings:
             start_minimized=bool(data.get("start_minimized", False)),
             enable_system_proxy=bool(data.get("enable_system_proxy", True)),
             system_proxy_bypass_lan=bool(data.get("system_proxy_bypass_lan", True)),
+            system_proxy_override=str(data.get("system_proxy_override") or ""),
             launch_on_startup=bool(data.get("launch_on_startup", False)),
             reconnect_on_network_change=bool(data.get("reconnect_on_network_change", True)),
             xray_path=str(data.get("xray_path") or ""),

@@ -14,6 +14,13 @@ INTERNET_OPTION_REFRESH = 37
 INTERNET_OPTION_SETTINGS_CHANGED = 39
 INTERNET_SETTINGS_KEY = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 
+DEFAULT_PROXY_BYPASS = (
+    "localhost;127.*;10.*;"
+    "172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;"
+    "172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;"
+    "192.168.*;*.lan"
+)
+
 
 class ProxyManager:
     def __init__(self) -> None:
@@ -79,7 +86,13 @@ class ProxyManager:
         wininet.InternetSetOptionW(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
         wininet.InternetSetOptionW(0, INTERNET_OPTION_REFRESH, 0, 0)
 
-    def enable(self, http_port: int, socks_port: int, bypass_lan: bool = True) -> None:
+    def enable(
+        self,
+        http_port: int,
+        socks_port: int,
+        bypass_lan: bool = True,
+        proxy_override: str = "",
+    ) -> None:
         if not self.is_supported:
             return
         if self._backup is None:
@@ -89,15 +102,16 @@ class ProxyManager:
         proxy_server = (
             f"http={PROXY_HOST}:{http_port};"
             f"https={PROXY_HOST}:{http_port};"
+            f"ftp={PROXY_HOST}:{http_port};"
             f"socks={PROXY_HOST}:{socks_port}"
         )
 
-        override = "<local>;localhost;127.*"
-        if bypass_lan:
-            override = (
-                "<local>;localhost;127.*;10.*;172.*;192.168.*;"
-                "*.local;::1"
-            )
+        if proxy_override:
+            override = proxy_override
+        elif bypass_lan:
+            override = DEFAULT_PROXY_BYPASS
+        else:
+            override = "localhost;127.*"
 
         self._write_settings(
             {

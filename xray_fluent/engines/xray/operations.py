@@ -104,6 +104,7 @@ def start_proxy(
                 runtime.http_port,
                 runtime.socks_port,
                 bypass_lan=controller._system_proxy_bypass_lan(),
+                proxy_override=controller.state.settings.system_proxy_override,
             )
         except Exception as exc:
             controller.xray.stop()
@@ -157,6 +158,7 @@ def restart_proxy_core(controller: AppController, reason: str) -> bool:
                     runtime.http_port,
                     runtime.socks_port,
                     bypass_lan=controller._system_proxy_bypass_lan(),
+                    proxy_override=controller.state.settings.system_proxy_override,
                 )
             except Exception as exc:
                 controller.xray.stop()

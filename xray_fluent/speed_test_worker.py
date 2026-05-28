@@ -123,7 +123,7 @@ class SpeedTestWorker(QThread):
         config.pop("policy", None)
         config["inbounds"] = [
             ib for ib in config.get("inbounds", [])
-            if ib.get("tag") in ("socks-in", "http-in")
+            if ib.get("tag") in ("socks-in", "http-in", "mixed-in")
         ]
         routing_obj = config.get("routing", {})
         routing_obj["rules"] = [

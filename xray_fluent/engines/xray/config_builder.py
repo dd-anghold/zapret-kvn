@@ -190,10 +190,10 @@ def build_xray_config(
         },
         "inbounds": [
             {
-                "tag": "socks-in",
+                "tag": "mixed-in",
                 "listen": PROXY_HOST,
                 "port": int(socks_port),
-                "protocol": "socks",
+                "protocol": "mixed",
                 "settings": {
                     "auth": "noauth",
                     "udp": True,
@@ -201,18 +201,6 @@ def build_xray_config(
                 "sniffing": {
                     "enabled": True,
                     "destOverride": ["http", "tls", "quic"],
-                    "routeOnly": True,
-                },
-            },
-            {
-                "tag": "http-in",
-                "listen": PROXY_HOST,
-                "port": int(http_port),
-                "protocol": "http",
-                "settings": {},
-                "sniffing": {
-                    "enabled": True,
-                    "destOverride": ["http", "tls"],
                     "routeOnly": True,
                 },
             },

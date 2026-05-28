@@ -866,6 +866,7 @@ class AppController(QObject):
                     http_port,
                     socks_port,
                     bypass_lan=bypass_lan,
+                    proxy_override=settings.system_proxy_override,
                 )
             else:
                 self.proxy.disable(restore_previous=True)

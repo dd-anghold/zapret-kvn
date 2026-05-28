@@ -4,10 +4,10 @@
   },
   "inbounds": [
     {
-      "tag": "socks-in",
+      "tag": "mixed-in",
       "listen": "0.0.0.0",
       "port": 10808,
-      "protocol": "socks",
+      "protocol": "mixed",
       "settings": {
         "auth": "noauth",
         "udp": true
@@ -18,21 +18,6 @@
           "http",
           "tls",
           "quic"
-        ],
-        "routeOnly": true
-      }
-    },
-    {
-      "tag": "http-in",
-      "listen": "0.0.0.0",
-      "port": 10809,
-      "protocol": "http",
-      "settings": {},
-      "sniffing": {
-        "enabled": true,
-        "destOverride": [
-          "http",
-          "tls"
         ],
         "routeOnly": true
       }

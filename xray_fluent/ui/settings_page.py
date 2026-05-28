@@ -27,6 +27,7 @@ from qfluentwidgets.components.settings.setting_card import ColorPickerButton
 from ..constants import SINGBOX_PATH_DEFAULT, XRAY_PATH_DEFAULT
 from ..models import AppSettings, SecuritySettings
 from ..path_utils import normalize_configured_path, resolve_configured_path
+from ..proxy_manager import DEFAULT_PROXY_BYPASS
 
 
 class _ComboCard(SettingCard):
@@ -177,6 +178,13 @@ class SettingsPage(QWidget):
             "Не отправлять локальные адреса через системный прокси Windows",
             parent=network_group,
         )
+        self.proxy_override_card = _LineEditCard(
+            FIF.FILTER, "Исключения прокси",
+            "Список адресов через ; (пусто = значения по умолчанию)",
+            placeholder=DEFAULT_PROXY_BYPASS,
+            parent=network_group,
+        )
+        self.proxy_override_card.edit.setMinimumWidth(560)
         self.reconnect_card = SwitchSettingCard(
             FIF.SYNC, "Переподключение при смене сети",
             "Автоматически переподключаться при смене сетевого адаптера",
@@ -184,6 +192,7 @@ class SettingsPage(QWidget):
         )
 
         network_group.addSettingCard(self.proxy_bypass_lan_card)
+        network_group.addSettingCard(self.proxy_override_card)
         network_group.addSettingCard(self.reconnect_card)
         root.addWidget(network_group)
 
@@ -367,6 +376,7 @@ class SettingsPage(QWidget):
         self.theme_card.combo.currentIndexChanged.connect(self._auto_save)
         self.accent_card.picker.colorChanged.connect(self._auto_save)
         self.proxy_bypass_lan_card.checkedChanged.connect(self._auto_save)
+        self.proxy_override_card.edit.editingFinished.connect(self._auto_save)
         self.xray_path_card.edit.editingFinished.connect(self._auto_save)
         self.singbox_path_card.edit.editingFinished.connect(self._auto_save)
         self.tun_engine_card.combo.currentIndexChanged.connect(self._auto_save)
@@ -396,6 +406,7 @@ class SettingsPage(QWidget):
         self._select_combo_data(self.theme_card.combo, settings.theme)
         self.accent_card.picker.setColor(QColor(settings.accent_color or "#0078D4"))
         self.proxy_bypass_lan_card.setChecked(settings.system_proxy_bypass_lan)
+        self.proxy_override_card.edit.setText(settings.system_proxy_override)
         self.xray_path_card.edit.setText(
             normalize_configured_path(
                 settings.xray_path,
@@ -488,6 +499,7 @@ class SettingsPage(QWidget):
         data.theme = str(self.theme_card.combo.currentData() or "system")
         data.accent_color = self.accent_card.picker.color.name() or "#0078D4"
         data.system_proxy_bypass_lan = self.proxy_bypass_lan_card.isChecked()
+        data.system_proxy_override = self.proxy_override_card.edit.text().strip()
         data.xray_path = normalize_configured_path(
             self.xray_path_card.edit.text(),
             default_path=XRAY_PATH_DEFAULT,

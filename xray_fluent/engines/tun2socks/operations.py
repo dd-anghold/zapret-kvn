@@ -137,7 +137,7 @@ def hot_swap(controller: AppController, reason: str, node: Node) -> bool:
                 tun=True,
                 core="tun2socks",
                 api_port=controller._xray_api_port,
-                xray_inbound_tags=("socks-in", "http-in"),
+                xray_inbound_tags=("mixed-in", "socks-in", "http-in"),
                 ping_host=node.server,
                 ping_port=node.port,
             )

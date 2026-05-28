@@ -35,7 +35,7 @@ class LiveMetricsWorker(QThread):
         mode: str = "xray",
         clash_api_port: int = 19090,
         socks_port: int = 10808,
-        http_port: int = 10809,
+        http_port: int = 10808,
         xray_inbound_tags: list[str] | None = None,
     ):
         super().__init__()
