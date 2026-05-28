@@ -5,10 +5,14 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+if os.name == "nt":
+    import winreg
 
 from PyQt6.QtCore import QObject, QProcess, QTimer, pyqtSignal
 
@@ -231,6 +235,9 @@ class ZapretManager(QObject):
         for name in killed:
             self.log_line.emit(f"[zapret] Завершён сторонний процесс: {name}")
 
+        # Clean up any leftover WinDivert service before starting a fresh instance
+        self._cleanup_windivert()
+
         exe = WINWS2_EXE
         if not exe.exists():
             self.error.emit(f"winws2.exe не найден: {exe}")
@@ -273,6 +280,8 @@ class ZapretManager(QObject):
     def stop(self) -> None:
         self._health_timer.stop()
         if self._process is None:
+            # No process to kill, but still clean up any leftover driver
+            self._cleanup_windivert()
             return
 
         if self._process.state() == QProcess.ProcessState.Running:
@@ -281,7 +290,73 @@ class ZapretManager(QObject):
             self._process.waitForFinished(5000)
 
         self._process = None
+        # Unload the WinDivert kernel driver — force-kill doesn't give winws2
+        # a chance to call WinDivert close, so the driver stays loaded otherwise
+        self._cleanup_windivert()
         self.stopped.emit()
+
+    @staticmethod
+    def _cleanup_windivert() -> None:
+        """Stop and delete the WinDivert kernel driver service after winws2 exits.
+
+        When winws2.exe is force-killed it cannot unload Monkey64.sys (WinDivert)
+        via the normal WinDivert API path.  The driver stays registered as a Windows
+        kernel service and the file remains locked.  We stop/delete the service
+        explicitly so the file can be deleted and ports are freed for the next run.
+        """
+        if os.name != "nt":
+            return
+
+        # Discover service names via registry (ImagePath contains our driver files)
+        service_names: set[str] = set()
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Services",
+                access=winreg.KEY_READ,
+            ) as root:
+                idx = 0
+                while True:
+                    try:
+                        svc_name = winreg.EnumKey(root, idx)
+                        idx += 1
+                    except OSError:
+                        break
+                    try:
+                        with winreg.OpenKey(root, svc_name, access=winreg.KEY_READ) as sk:
+                            image_path, _ = winreg.QueryValueEx(sk, "ImagePath")
+                            lower = str(image_path).lower()
+                            if "monkey64" in lower or "monkey32" in lower or "windivert" in lower:
+                                service_names.add(svc_name)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+
+        # Always try known WinDivert service names as a fallback
+        service_names.update({"WinDivert14", "WinDivert", "WinDivert2"})
+
+        for name in sorted(service_names):
+            try:
+                r = subprocess.run(
+                    ["sc", "stop", name],
+                    capture_output=True, timeout=5,
+                    creationflags=_CREATE_NO_WINDOW,
+                )
+                if r.returncode == 0:
+                    log.info("zapret cleanup: stopped driver service %s", name)
+            except Exception:
+                pass
+            try:
+                r = subprocess.run(
+                    ["sc", "delete", name],
+                    capture_output=True, timeout=5,
+                    creationflags=_CREATE_NO_WINDOW,
+                )
+                if r.returncode == 0:
+                    log.info("zapret cleanup: deleted driver service %s", name)
+            except Exception:
+                pass
 
     # ── internals ───────────────────────────────────────────────
 

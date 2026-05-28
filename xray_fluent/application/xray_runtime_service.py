@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
-from ..constants import PROXY_HOST, XRAY_TUN_DEFAULT_INTERFACE_NAME
+from ..constants import PROXY_HOST, XRAY_TUN_DEFAULT_ADDRESS, XRAY_TUN_DEFAULT_INTERFACE_NAME, XRAY_TUN_DEFAULT_MTU
 from ..engines.xray import get_windows_default_route_context
 from .connection_service import find_free_api_port
 from .runtime_introspection import extract_xray_runtime_ports
@@ -164,13 +164,25 @@ def ensure_xray_tun_contract(controller: AppController, payload: dict[str, Any])
         if str(inbound.get("protocol") or "").strip().lower() != "tun":
             continue
         settings = controller._ensure_dict(inbound, "settings")
-        return str(settings.get("name") or "").strip() or XRAY_TUN_DEFAULT_INTERFACE_NAME
+        name = str(settings.get("name") or "").strip() or XRAY_TUN_DEFAULT_INTERFACE_NAME
+        # Fill in required fields if missing — xray crashes with empty TUN settings (MTU=0 → no buffer size)
+        if not settings.get("name"):
+            settings["name"] = name
+        if not settings.get("address"):
+            settings["address"] = [XRAY_TUN_DEFAULT_ADDRESS]
+        if not settings.get("mtu"):
+            settings["mtu"] = XRAY_TUN_DEFAULT_MTU
+        return name
 
     inbounds.append(
         {
             "tag": APP_TUN_INBOUND_TAG,
             "protocol": "tun",
-            "settings": {},
+            "settings": {
+                "name": XRAY_TUN_DEFAULT_INTERFACE_NAME,
+                "address": [XRAY_TUN_DEFAULT_ADDRESS],
+                "mtu": XRAY_TUN_DEFAULT_MTU,
+            },
             "sniffing": {
                 "enabled": True,
                 "destOverride": ["http", "tls", "quic"],

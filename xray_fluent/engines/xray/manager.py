@@ -94,6 +94,11 @@ class XrayManager(QObject):
             self.error.emit(port_error)
             return False
 
+        has_tun = any(
+            isinstance(ib, dict) and str(ib.get("protocol") or "").strip().lower() == "tun"
+            for ib in config.get("inbounds", [])
+        )
+
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         XRAY_CONFIG_FILE.write_text(json.dumps(config, ensure_ascii=True, indent=2), encoding="utf-8")
 
@@ -111,7 +116,9 @@ class XrayManager(QObject):
             self._report_startup_failure(f"Не удалось запустить Xray: {self._process.errorString()}")
             return False
 
-        if not self._wait_until_ready(required_ports):
+        # TUN mode needs more time: wintun driver init + TUN device setup
+        ready_timeout = 12.0 if has_tun else 5.0
+        if not self._wait_until_ready(required_ports, timeout_sec=ready_timeout):
             self._starting = False
             return False
 

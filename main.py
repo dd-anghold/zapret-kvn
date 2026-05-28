@@ -150,6 +150,7 @@ def _install_exception_hooks() -> None:
     sys.excepthook = _log_unhandled_exception
     threading.excepthook = _log_background_exception
     atexit.register(_disable_system_proxy_on_exit)
+    atexit.register(_cleanup_windivert_on_exit)
     atexit.register(_log_process_exit)
 
 
@@ -212,6 +213,18 @@ def _disable_system_proxy_on_exit() -> None:
                 creationflags=0x08000000,
             )
             _bootstrap_logger.info("TUN adapter disabled on exit (safety)")
+    except Exception:
+        pass
+
+
+def _cleanup_windivert_on_exit() -> None:
+    """Safety net: unload WinDivert kernel driver if zapret was running when the app died."""
+    if sys.platform != "win32":
+        return
+    try:
+        from xray_fluent.zapret_manager import ZapretManager
+        ZapretManager._cleanup_windivert()
+        _bootstrap_logger.info("WinDivert driver cleanup on exit (safety)")
     except Exception:
         pass
 
