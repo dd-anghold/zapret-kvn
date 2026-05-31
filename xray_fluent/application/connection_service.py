@@ -107,9 +107,6 @@ def connect_selected(controller: AppController, allow_during_reconnect: bool = F
                 )
                 return False
 
-            if controller.proxy.is_enabled():
-                controller.proxy.disable(restore_previous=True)
-
             controller._tun_log_count = 0
             engine = controller.state.settings.tun_engine
 
@@ -137,6 +134,24 @@ def connect_selected(controller: AppController, allow_during_reconnect: bool = F
                 controller._active_core = prev_active_core
                 controller._set_connection_status("error", f"Неизвестный TUN engine: {engine}", level="error")
                 return False
+
+            # Apply system proxy for TUN mode if requested.
+            # xray/tun2socks engines always expose mixed-in on 10808.
+            # singbox-only mode has no local mixed port — proxy is set but
+            # points to nothing useful; user can disable it via the switch.
+            if controller.state.settings.enable_system_proxy:
+                socks_p = runtime_xray.socks_port if runtime_xray is not None else DEFAULT_SOCKS_PORT
+                http_p = runtime_xray.http_port if runtime_xray is not None else DEFAULT_HTTP_PORT
+                try:
+                    controller.proxy.enable(
+                        http_p, socks_p,
+                        bypass_lan=controller._system_proxy_bypass_lan(),
+                        proxy_override=controller.state.settings.system_proxy_override,
+                    )
+                except Exception as exc:
+                    controller._log(f"[tun] system proxy enable failed: {exc}")
+            elif controller.proxy.is_enabled():
+                controller.proxy.disable(restore_previous=True)
         else:
             result = start_xray_proxy(controller, node, prev_active_core=prev_active_core)
             if result is None:

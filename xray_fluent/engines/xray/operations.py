@@ -48,7 +48,7 @@ def start_tun(
     if not controller.xray.start(controller.state.settings.xray_path, runtime.config):
         controller._active_core = prev_active_core
         return None
-    route_ok = controller._xray_tun_routes.setup(runtime.tun_interface_name)
+    route_ok = controller._xray_tun_routes.setup(runtime.tun_interface_name, server_ip=runtime.ping_host)
     if not route_ok:
         controller.xray.stop()
         controller._set_connection_status(

@@ -82,6 +82,7 @@ class Tun2SocksManager(QObject):
         self._process.setArguments([
             "-device", f"tun://{TUN_DEVICE_NAME}",
             "-proxy", proxy_url,
+            "-mtu", "1500",
             "-loglevel", "error",
         ])
         self._process.start()
@@ -167,6 +168,17 @@ class Tun2SocksManager(QObject):
             if not tun_idx:
                 self.error.emit("failed to detect TUN interface index")
                 return False
+
+            # Assign IP to TUN interface — wintun adapters have no IP by default,
+            # so the nexthop (TUN_GW) wouldn't be reachable without this.
+            ip_result = run_text_pumped(
+                ["netsh", "interface", "ipv4", "set", "address", TUN_DEVICE_NAME,
+                 "static", TUN_ADDR, TUN_MASK],
+                timeout=5,
+                creationflags=_CREATE_NO_WINDOW,
+            )
+            self.log_received.emit(f"[tun2socks] TUN IP assignment rc={ip_result.returncode}")
+            sleep_with_events(0.3)
 
             # Get current default gateway
             result = run_text_pumped(

@@ -704,8 +704,8 @@ class AppController(QObject):
     def _xray_outbound_is_loop_protected(outbound: dict[str, Any]) -> bool:
         return xray_outbound_is_loop_protected_operation(outbound)
 
-    def _apply_xray_tun_loop_prevention(self, payload: dict[str, Any], interface_alias: str) -> int:
-        return apply_xray_tun_loop_prevention_operation(self, payload, interface_alias)
+    def _apply_xray_tun_loop_prevention(self, payload: dict[str, Any], interface_alias: str, source_ip: str = "") -> int:
+        return apply_xray_tun_loop_prevention_operation(self, payload, interface_alias, source_ip)
 
     def _inspect_active_singbox_config(self) -> tuple[Path, str, bool]:
         state = self._get_singbox_document_state()
