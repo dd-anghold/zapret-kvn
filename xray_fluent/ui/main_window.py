@@ -1061,8 +1061,6 @@ class MainWindow(FluentWindow):
 
         settings = deepcopy(self.controller.state.settings)
         settings.tun_mode = checked
-        if checked:
-            settings.enable_system_proxy = False
         self.controller.update_settings(settings)
 
     def _on_dashboard_proxy_toggled(self, checked: bool) -> None:

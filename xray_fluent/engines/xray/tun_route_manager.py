@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from ...constants import XRAY_TUN_DEFAULT_INTERFACE_NAME
+from ...constants import XRAY_TUN_DEFAULT_ADDRESS, XRAY_TUN_DEFAULT_INTERFACE_NAME
 from ...subprocess_utils import CREATE_NO_WINDOW, result_output_text, run_text_pumped, sleep_with_events
 
 # Private IP ranges — traffic to these bypasses TUN via more-specific connected routes
@@ -131,37 +131,40 @@ class XrayTunRouteManager(QObject):
         # 1. Wait for xray to create the TUN interface and assign it an IP.
         iface = self._wait_for_tun_interface(self._tun_name)
         if iface is None:
-            self._log(f"TUN interface '{self._tun_name}' did not appear or has no IPv4")
+            self._log(f"TUN interface '{self._tun_name}' did not appear (adapter not found within timeout)")
             return False
 
         self._tun_idx = iface.index
-        self._tun_gw = iface.ipv4
+        # xray 26.x may assign IP via internal TUN stack, not Windows IP Helper;
+        # fall back to the configured gateway address so route skip logic still works.
+        self._tun_gw = iface.ipv4 or XRAY_TUN_DEFAULT_ADDRESS.split("/")[0]
 
-        # 2. Capture the physical gateway NOW — before we touch the routing table.
-        #    Also clear any stale /1 or /0 TUN routes from a previous session so
-        #    the captured gateway reflects the physical uplink, not a leftover TUN hop.
-        self._delete_stale_tun_routes()
+        # 2. Capture the physical gateway using Get-NetRoute with TUN index filter.
+        #    This works even when xray's autoSystemRoutingTable has already installed
+        #    a 0.0.0.0/0 route through TUN (we exclude it by interface index).
         self._orig_gw = self._get_original_gateway()
         if not self._orig_gw:
             self._log("could not determine physical gateway — aborting TUN route setup")
             return False
 
-        # 3. VPN server /32 bypass (must exist BEFORE /1 routes are added).
+        # 3. VPN server /32 bypass (must exist BEFORE default routes).
         if server_ip and _is_valid_ipv4(server_ip):
             self._add_server_bypass(server_ip, self._orig_gw)
 
-        # 4. LAN bypass routes (must exist before /1 routes).
+        # 4. LAN bypass routes.
         self._add_lan_bypasses(self._orig_gw)
 
-        # 5. TUN default routes — only if xray's autoRoute hasn't added them already.
-        if not self._tun_has_default_routes():
+        # 5. TUN default routes — only if xray's autoSystemRoutingTable hasn't added them.
+        if self._tun_has_default_routes():
+            self._log("xray autoSystemRoutingTable already installed TUN default routes — skipping manual add")
+        else:
+            # Remove stale /1 or /0 routes from a crashed previous session before adding ours.
+            self._delete_stale_tun_routes()
             ok = self._add_split_routes()
             if not ok:
                 self.cleanup()
                 return False
             self._split_routes_added = True
-        else:
-            self._log("xray autoRoute already installed TUN default routes — skipping manual add")
 
         # 6. Optional IPv6 default via TUN.
         if iface.ipv6:
@@ -219,19 +222,28 @@ class XrayTunRouteManager(QObject):
 
     @staticmethod
     def _read_tun_interface(name: str) -> _TunInterface | None:
+        """Detect the TUN adapter by name.
+
+        xray 26.x (Wintun) assigns the IP address via its internal TUN stack,
+        so Get-NetIPAddress may not see it. We use Get-NetAdapter as the primary
+        check (just need the adapter index) and fall back to Get-NetIPAddress for
+        the IP when available.
+        """
         escaped = _powershell_string_literal(name)
+        # All parts are f-strings so {{ → { and }} → } in the generated PS script.
         script = (
+            f"$a = Get-NetAdapter -Name '{escaped}' -ErrorAction SilentlyContinue; "
+            f"if (-not $a) {{ exit 1 }}; "
             f"$v4 = Get-NetIPAddress -InterfaceAlias '{escaped}' -AddressFamily IPv4 "
-            "-ErrorAction SilentlyContinue "
-            "| Where-Object {{ $_.IPAddress -and $_.IPAddress -ne '0.0.0.0' }} "
-            "| Select-Object -First 1; "
-            "if (-not $v4) {{ exit 1 }}; "
+            f"-ErrorAction SilentlyContinue "
+            f"| Where-Object {{ $_.IPAddress -and $_.IPAddress -ne '0.0.0.0' }} "
+            f"| Select-Object -First 1; "
             f"$v6 = Get-NetIPAddress -InterfaceAlias '{escaped}' -AddressFamily IPv6 "
-            "-ErrorAction SilentlyContinue "
-            "| Where-Object {{ $_.IPAddress -notlike 'fe80::*' }} "
-            "| Select-Object -First 1; "
-            "@{{ idx = $v4.InterfaceIndex; v4 = $v4.IPAddress; v6 = ($v6.IPAddress) }} "
-            "| ConvertTo-Json -Compress"
+            f"-ErrorAction SilentlyContinue "
+            f"| Where-Object {{ $_.IPAddress -notlike 'fe80::*' }} "
+            f"| Select-Object -First 1; "
+            f"@{{ idx = $a.InterfaceIndex; v4 = ($v4.IPAddress); v6 = ($v6.IPAddress) }} "
+            f"| ConvertTo-Json -Compress"
         )
         try:
             result = run_text_pumped(
@@ -249,7 +261,7 @@ class XrayTunRouteManager(QObject):
         idx = int(payload.get("idx") or 0)
         ipv4 = str(payload.get("v4") or "").strip()
         ipv6 = str(payload.get("v6") or "").strip()
-        if idx <= 0 or not ipv4:
+        if idx <= 0:
             return None
         return _TunInterface(index=idx, ipv4=ipv4, ipv6=ipv6)
 
@@ -262,7 +274,31 @@ class XrayTunRouteManager(QObject):
                             prefix, f"interface={self._tun_idx}"])
 
     def _get_original_gateway(self) -> str:
-        """Read the physical default gateway from the routing table."""
+        """Read the physical default gateway, excluding any route via TUN."""
+        # Use Get-NetRoute with interface index filter so we always get the
+        # physical uplink even when xray's autoSystemRoutingTable has added
+        # a 0.0.0.0/0 route through the TUN adapter.
+        try:
+            script = (
+                f"$r = Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' "
+                f"-ErrorAction SilentlyContinue "
+                f"| Where-Object {{ $_.InterfaceIndex -ne {self._tun_idx} }} "
+                "| Sort-Object RouteMetric, InterfaceMetric "
+                "| Select-Object -First 1; "
+                "if (-not $r) { exit 1 }; "
+                "Write-Output $r.NextHop"
+            )
+            result = run_text_pumped(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                timeout=6, creationflags=CREATE_NO_WINDOW,
+            )
+            if result.returncode == 0:
+                gw = result_output_text(result).strip()
+                if gw and gw not in {"0.0.0.0", "::"}:
+                    return gw
+        except Exception:
+            pass
+        # Fallback: parse `route print` text output
         try:
             result = run_text_pumped(
                 ["cmd", "/c", "route", "print", "0.0.0.0"],
@@ -272,8 +308,7 @@ class XrayTunRouteManager(QObject):
                 parts = line.split()
                 if len(parts) >= 5 and parts[0] == "0.0.0.0" and parts[1] == "0.0.0.0":
                     gw = parts[2]
-                    # Skip TUN gateway — that would be a stale leftover
-                    if gw != self._tun_gw:
+                    if gw != self._tun_gw and gw not in {"0.0.0.0", "::"}:
                         return gw
         except Exception:
             pass
@@ -286,9 +321,9 @@ class XrayTunRouteManager(QObject):
         try:
             script = (
                 f"$r = Get-NetRoute -InterfaceIndex {self._tun_idx} -AddressFamily IPv4 "
-                "-ErrorAction SilentlyContinue "
-                "| Where-Object {{ $_.DestinationPrefix -in ('0.0.0.0/0','0.0.0.0/1','128.0.0.0/1') }}; "
-                "if ($r) {{ 'yes' }} else {{ 'no' }}"
+                f"-ErrorAction SilentlyContinue "
+                f"| Where-Object {{ $_.DestinationPrefix -in ('0.0.0.0/0','0.0.0.0/1','128.0.0.0/1') }}; "
+                f"if ($r) {{ 'yes' }} else {{ 'no' }}"
             )
             result = run_text_pumped(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],

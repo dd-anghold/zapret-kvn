@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
-from ..constants import PROXY_HOST, XRAY_TUN_DEFAULT_ADDRESS, XRAY_TUN_DEFAULT_INTERFACE_NAME, XRAY_TUN_DEFAULT_MTU
+from ..constants import PROXY_HOST, XRAY_TUN_DEFAULT_ADDRESS, XRAY_TUN_DEFAULT_ADDRESS_V6, XRAY_TUN_DEFAULT_INTERFACE_NAME, XRAY_TUN_DEFAULT_MTU
 from ..engines.xray import get_windows_default_route_context
 from .connection_service import find_free_api_port
 from .runtime_introspection import extract_xray_runtime_ports
@@ -208,12 +208,13 @@ def _redirect_tun_direct_catchalls(payload: dict[str, Any]) -> int:
 
 
 def ensure_xray_tun_contract(controller: AppController, payload: dict[str, Any]) -> str:
-    """Prepare the xray config for native TUN mode.
+    """Prepare the xray config for native TUN mode (v2rayN-compatible field names).
 
     Changes made to the in-memory payload (original file untouched):
-    1. Add / fill-in the TUN inbound with autoRoute, mtu=1500, sniffing.
-    2. Patch catch-all 'direct' port rules → 'proxy' to prevent routing loops.
-    3. Ensure a DNS section exists so xray can resolve domains inside the tunnel.
+    1. Add / fill-in the TUN inbound: gateway, MTU, autoSystemRoutingTable, autoOutboundsInterface.
+    2. Add blocking rules for mDNS/NetBIOS ports and multicast IPs.
+    3. Patch catch-all 'direct' port rules → 'proxy' to prevent routing loops.
+    4. Ensure a DNS section exists so xray can resolve domains inside the tunnel.
     """
     inbounds = controller._ensure_list(payload, "inbounds")
 
@@ -227,24 +228,30 @@ def ensure_xray_tun_contract(controller: AppController, payload: dict[str, Any])
             existing_tun = inbound
             break
 
+    _DEFAULT_GATEWAY = [XRAY_TUN_DEFAULT_ADDRESS, XRAY_TUN_DEFAULT_ADDRESS_V6]
+
     if existing_tun is not None:
         settings = controller._ensure_dict(existing_tun, "settings")
         tun_name = str(settings.get("name") or "").strip() or XRAY_TUN_DEFAULT_INTERFACE_NAME
         if not settings.get("name"):
             settings["name"] = tun_name
-        if not settings.get("address"):
-            settings["address"] = [XRAY_TUN_DEFAULT_ADDRESS]
-        # Always enforce sane MTU — 9000 causes fragmentation on real-world links
-        settings["mtu"] = XRAY_TUN_DEFAULT_MTU
-        # autoRoute tells xray to manage routes itself (uses WFP on Windows to
-        # exempt its own process — eliminates routing loops on modern xray builds)
-        settings.setdefault("autoRoute", True)
-        settings.setdefault("endpointIndependentNat", True)
-        # Ensure sniffing is present for domain-based routing
+        # "gateway" is the correct xray field name (not "address")
+        if not settings.get("gateway"):
+            settings["gateway"] = _DEFAULT_GATEWAY
+        settings.pop("address", None)
+        settings["MTU"] = XRAY_TUN_DEFAULT_MTU
+        settings.pop("mtu", None)
+        # autoSystemRoutingTable tells xray to install system routes (WFP on Windows)
+        settings.setdefault("autoSystemRoutingTable", ["0.0.0.0/0", "::/0"])
+        settings.pop("autoRoute", None)
+        # autoOutboundsInterface lets xray bind its own sockets to the physical NIC,
+        # preventing the routing loop without needing manual sockopt patches
+        settings.setdefault("autoOutboundsInterface", "auto")
+        settings.pop("endpointIndependentNat", None)
         sniffing = controller._ensure_dict(existing_tun, "sniffing")
         sniffing.setdefault("enabled", True)
-        sniffing.setdefault("destOverride", ["http", "tls", "quic"])
-        sniffing.setdefault("routeOnly", True)
+        sniffing.setdefault("destOverride", ["http", "tls"])
+        sniffing.pop("routeOnly", None)
     else:
         inbounds.append(
             {
@@ -252,15 +259,14 @@ def ensure_xray_tun_contract(controller: AppController, payload: dict[str, Any])
                 "protocol": "tun",
                 "settings": {
                     "name": tun_name,
-                    "address": [XRAY_TUN_DEFAULT_ADDRESS],
-                    "mtu": XRAY_TUN_DEFAULT_MTU,
-                    "autoRoute": True,
-                    "endpointIndependentNat": True,
+                    "MTU": XRAY_TUN_DEFAULT_MTU,
+                    "gateway": _DEFAULT_GATEWAY,
+                    "autoSystemRoutingTable": ["0.0.0.0/0", "::/0"],
+                    "autoOutboundsInterface": "auto",
                 },
                 "sniffing": {
                     "enabled": True,
-                    "destOverride": ["http", "tls", "quic"],
-                    "routeOnly": True,
+                    "destOverride": ["http", "tls"],
                 },
             }
         )
@@ -275,6 +281,28 @@ def ensure_xray_tun_contract(controller: AppController, payload: dict[str, Any])
             ],
             "queryStrategy": "UseIPv4",
         }
+
+    # --- ensure a "block" outbound exists (required for blocking rules below) ---
+    outbounds = controller._ensure_list(payload, "outbounds")
+    has_block_outbound = any(
+        isinstance(ob, dict) and str(ob.get("tag") or "") == "block"
+        for ob in outbounds
+    )
+    if not has_block_outbound:
+        outbounds.append({"tag": "block", "protocol": "blackhole", "settings": {}})
+
+    # --- Windows TUN blocking rules: mDNS/NetBIOS ports and multicast IPs ---
+    # These prevent WFP conflicts and mDNS/broadcast storms through the tunnel.
+    routing = controller._ensure_dict(payload, "routing")
+    rules = controller._ensure_list(routing, "rules")
+    _TUN_BLOCK_RULES = [
+        {"type": "field", "network": "udp", "port": "135,137-139,5353", "outboundTag": "block"},
+        {"type": "field", "ip": ["224.0.0.0/3", "ff00::/8"], "outboundTag": "block"},
+    ]
+    existing_rule_reprs = {str(r) for r in rules}
+    for rule in _TUN_BLOCK_RULES:
+        if str(rule) not in existing_rule_reprs:
+            rules.insert(0, rule)
 
     # --- patch catch-all direct rules that cause routing loops ---
     n = _redirect_tun_direct_catchalls(payload)
@@ -332,6 +360,17 @@ def apply_xray_tun_loop_prevention(
     return patched
 
 
+def _tun_inbound_has_auto_outbounds_interface(payload: dict[str, Any]) -> bool:
+    for inbound in (payload.get("inbounds") or []):
+        if not isinstance(inbound, dict):
+            continue
+        if str(inbound.get("protocol") or "").strip().lower() != "tun":
+            continue
+        val = str((inbound.get("settings") or {}).get("autoOutboundsInterface") or "").strip()
+        return bool(val)
+    return False
+
+
 def build_runtime_xray_config(controller: AppController, node: Node | None = None, *, tun_mode: bool = False) -> XrayRuntimeConfig:
     source_path, text = controller.load_active_xray_config_text()
     try:
@@ -372,8 +411,11 @@ def build_runtime_xray_config(controller: AppController, node: Node | None = Non
     loop_prevention_interface = ""
     loop_prevention_patched_outbounds = 0
     if tun_mode:
+        # autoOutboundsInterface in the TUN inbound tells xray to bind its own
+        # sockets to the physical NIC natively — no need to patch each outbound.
+        tun_has_auto_interface = _tun_inbound_has_auto_outbounds_interface(payload)
         needs_loop_patch = False
-        if isinstance(outbounds, list):
+        if not tun_has_auto_interface and isinstance(outbounds, list):
             for outbound in outbounds:
                 if not isinstance(outbound, dict):
                     continue
