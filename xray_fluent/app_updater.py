@@ -60,57 +60,23 @@ class AppUpdate:
     digest_sha256: str = ""
 
 
-_SEMVER_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?")
+_VERSION_RE = re.compile(r"\d+(?:\.\d+)+")
 
 
-def _parse_semver(version: str) -> tuple[int, int, int, list[str]] | None:
-    match = _SEMVER_RE.search(version.strip().lstrip("v"))
+def _parse_version(version: str) -> tuple[int, ...] | None:
+    match = _VERSION_RE.search(version.strip())
     if not match:
         return None
-    major, minor, patch, suffix = match.groups()
-    prerelease = suffix.split(".") if suffix else []
-    return int(major), int(minor), int(patch), prerelease
-
-
-def _compare_prerelease(left: list[str], right: list[str]) -> int:
-    if not left and not right:
-        return 0
-    if not left:
-        return 1
-    if not right:
-        return -1
-
-    for left_part, right_part in zip(left, right):
-        if left_part == right_part:
-            continue
-        left_is_num = left_part.isdigit()
-        right_is_num = right_part.isdigit()
-        if left_is_num and right_is_num:
-            left_num = int(left_part)
-            right_num = int(right_part)
-            if left_num != right_num:
-                return 1 if left_num > right_num else -1
-            continue
-        if left_is_num != right_is_num:
-            return -1 if left_is_num else 1
-        return 1 if left_part > right_part else -1
-
-    if len(left) == len(right):
-        return 0
-    return 1 if len(left) > len(right) else -1
+    return tuple(int(x) for x in match.group().split("."))
 
 
 def _is_newer_version(latest: str, current: str) -> bool:
-    latest_parts = _parse_semver(latest)
-    current_parts = _parse_semver(current)
-    if latest_parts is None or current_parts is None:
+    lp = _parse_version(latest)
+    cp = _parse_version(current)
+    if lp is None or cp is None:
         return latest.strip().lstrip("v") != current.strip().lstrip("v")
-
-    latest_core = latest_parts[:3]
-    current_core = current_parts[:3]
-    if latest_core != current_core:
-        return latest_core > current_core
-    return _compare_prerelease(latest_parts[3], current_parts[3]) > 0
+    n = max(len(lp), len(cp))
+    return lp + (0,) * (n - len(lp)) > cp + (0,) * (n - len(cp))
 
 
 def _extract_digest(value: str) -> str:
