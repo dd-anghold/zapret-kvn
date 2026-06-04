@@ -160,7 +160,12 @@ def _get_estats_bytes(row: _MIB_TCPROW_OWNER_PID) -> tuple[int, int] | None:
         ctypes.byref(rod), 0, ctypes.sizeof(rod),
     )
     if ret == 0:
-        return rod.DataBytesIn, rod.DataBytesOut
+        # Cap at 10 TB per connection to discard garbage values from the Windows API
+        # (e.g. UINT64_MAX when stats weren't properly initialized). A single garbage
+        # value stored in prev_bytes causes a huge "drop" on the next tick that gets
+        # incorrectly accumulated into the closed-connection total (leading to EB display).
+        _CAP = 10 * 1024 ** 4  # 10 TB
+        return min(int(rod.DataBytesIn), _CAP), min(int(rod.DataBytesOut), _CAP)
     return None
 
 

@@ -182,6 +182,15 @@ def pack_zip() -> None:
     shutil.make_archive(str(ZIP_PATH.with_suffix("")), "zip", str(DIST_DIR), APP_NAME)
     _print(f"Portable archive ready: {ZIP_PATH}")
 
+    sha256_path = Path(str(ZIP_PATH) + ".sha256")
+    import hashlib
+    digest = hashlib.sha256()
+    with open(ZIP_PATH, "rb") as f:
+        while chunk := f.read(1024 * 1024):
+            digest.update(chunk)
+    sha256_path.write_text(digest.hexdigest(), encoding="ascii")
+    _print(f"SHA-256: {sha256_path}")
+
 
 # ------------------------------------------------------------------
 def main() -> int:

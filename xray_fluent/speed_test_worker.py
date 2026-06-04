@@ -211,7 +211,7 @@ class SpeedTestWorker(QThread):
 
     def _measure_speed(self, url: str, node_id: str, round_index: int, total_rounds: int) -> float | None:
         """Скачивает тестовый файл через временный прокси, возвращает скорость в МБ/с."""
-        proxy_url = f"http://{PROXY_HOST}:{SPEED_TEST_TEMP_HTTP_PORT}"
+        proxy_url = f"http://{PROXY_HOST}:{SPEED_TEST_TEMP_SOCKS_PORT}"
         handler = ProxyHandler({"http": proxy_url, "https": proxy_url})
         opener = build_opener(handler)
 

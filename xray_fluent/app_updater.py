@@ -159,7 +159,7 @@ class UpdateChecker(QThread):
             asset = None
             for a in data.get("assets", []):
                 name = a.get("name", "").lower()
-                if name.endswith(".zip") and "windows" in name and "x64" in name:
+                if name.endswith(".zip") and ("portable" in name or ("windows" in name and "x64" in name)):
                     asset = a
                     break
 

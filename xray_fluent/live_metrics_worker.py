@@ -67,6 +67,7 @@ class LiveMetricsWorker(QThread):
         prev_ts: float | None = None
         last_ping_ts = 0.0
         iteration_count = 0
+        proc_prev_ts: float | None = None  # separate timer for process stats speed
 
         # Proxy mode: per-process traffic via TCP connection estats
         proxy_prev_bytes: dict[str, tuple[int, int]] = {}  # {exe: (in, out)} for speed & drop detection
@@ -106,7 +107,10 @@ class LiveMetricsWorker(QThread):
                 if self._mode == "singbox":
                     process_stats = collect_process_stats(self._clash_api_port)
                 elif self._mode == "xray":
-                    proc_elapsed = (now - prev_ts) if prev_ts is not None else 0.0
+                    # Use dedicated proc_prev_ts — prev_ts was already updated to now
+                    # above, so (now - prev_ts) would always be ~0 and speed never shows.
+                    proc_elapsed = (now - proc_prev_ts) if proc_prev_ts is not None else 0.0
+                    proc_prev_ts = now
                     process_stats = self._collect_proxy_process_stats(
                         proxy_prev_bytes, proxy_closed_bytes, proc_elapsed,
                     )
@@ -151,9 +155,12 @@ class LiveMetricsWorker(QThread):
             cl_in, cl_out = closed_bytes.get(p.exe, (0, 0))
 
             # Detect closed connections: active bytes dropped (but not to zero — that indicates API glitch)
-            if p.bytes_in < prev_in and p.bytes_in > 0:
+            # Extra guard: ignore drops larger than 1 TB per tick (would only happen from residual
+            # garbage values already stored in prev_bytes before the cap was introduced).
+            _MAX_DROP = 1024 ** 4  # 1 TB per tick
+            if p.bytes_in < prev_in and p.bytes_in > 0 and (prev_in - p.bytes_in) <= _MAX_DROP:
                 cl_in += prev_in - p.bytes_in
-            if p.bytes_out < prev_out and p.bytes_out > 0:
+            if p.bytes_out < prev_out and p.bytes_out > 0 and (prev_out - p.bytes_out) <= _MAX_DROP:
                 cl_out += prev_out - p.bytes_out
             closed_bytes[p.exe] = (cl_in, cl_out)
 
