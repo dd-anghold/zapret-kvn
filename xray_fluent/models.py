@@ -225,6 +225,7 @@ class AppSettings:
     auto_switch_threshold_kbps: int = 50
     auto_switch_delay_sec: int = 30
     auto_switch_cooldown_sec: int = 60
+    nodes_column_widths: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -264,6 +265,7 @@ class AppSettings:
             "auto_switch_threshold_kbps": self.auto_switch_threshold_kbps,
             "auto_switch_delay_sec": self.auto_switch_delay_sec,
             "auto_switch_cooldown_sec": self.auto_switch_cooldown_sec,
+            "nodes_column_widths": {str(k): v for k, v in self.nodes_column_widths.items()},
         }
 
     @staticmethod
@@ -305,6 +307,10 @@ class AppSettings:
             auto_switch_threshold_kbps=int(data.get("auto_switch_threshold_kbps") or 50),
             auto_switch_delay_sec=int(data.get("auto_switch_delay_sec") or 30),
             auto_switch_cooldown_sec=int(data.get("auto_switch_cooldown_sec") or 60),
+            nodes_column_widths={
+                int(k): int(v)
+                for k, v in (data.get("nodes_column_widths") or {}).items()
+            },
         )
 
 

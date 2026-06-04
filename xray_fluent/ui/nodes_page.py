@@ -68,6 +68,7 @@ class NodesPage(QWidget):
     update_subscription_requested = pyqtSignal(str)        # sub_id
     remove_subscription_requested = pyqtSignal(str)        # sub_id
     rename_subscription_requested = pyqtSignal(str, str)   # sub_id, new_name
+    column_widths_changed = pyqtSignal(dict)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -88,6 +89,7 @@ class NodesPage(QWidget):
         self._speed_test_stopping = False
         self._in_reload = False
         self._active_node_id: str | None = None  # which node is the VPN endpoint
+        self._applying_column_widths = False
 
         # Stack: page 0 = server list, page 1 = node detail
         self._stack = QStackedWidget(self)
@@ -244,10 +246,15 @@ class NodesPage(QWidget):
         horizontal_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         horizontal_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         for col, width in _COLUMN_WIDTHS.items():
-            horizontal_header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(col, width)
         horizontal_header.setSectionsClickable(True)
         horizontal_header.sectionClicked.connect(self._on_header_clicked)
+
+        self._col_resize_timer = QTimer(self)
+        self._col_resize_timer.setSingleShot(True)
+        self._col_resize_timer.setInterval(400)
+        self._col_resize_timer.timeout.connect(self._emit_column_widths)
+        horizontal_header.sectionResized.connect(self._on_section_resized)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -315,6 +322,17 @@ class NodesPage(QWidget):
         self._rebuild_sub_chips()
 
     # ── Public API ──
+
+    def apply_column_widths(self, widths: dict[int, int]) -> None:
+        if not widths:
+            return
+        self._applying_column_widths = True
+        try:
+            for col, width in widths.items():
+                if col in _COLUMN_WIDTHS and width > 0:
+                    self.table.setColumnWidth(col, width)
+        finally:
+            self._applying_column_widths = False
 
     def set_subscriptions(self, subscriptions: list[Subscription]) -> None:
         self._subscriptions = list(subscriptions)
@@ -966,6 +984,15 @@ class NodesPage(QWidget):
             clipboard = QApplication.clipboard()
             if clipboard is not None:
                 clipboard.setText("\n".join(links))
+
+    def _on_section_resized(self, logical_index: int, old_size: int, new_size: int) -> None:
+        if not self._applying_column_widths:
+            self._col_resize_timer.start()
+
+    def _emit_column_widths(self) -> None:
+        header = cast(QHeaderView, self.table.horizontalHeader())
+        widths = {col: header.sectionSize(col) for col in _COLUMN_WIDTHS}
+        self.column_widths_changed.emit(widths)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Delete:

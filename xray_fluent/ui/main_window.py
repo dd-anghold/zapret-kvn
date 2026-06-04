@@ -231,6 +231,7 @@ class MainWindow(FluentWindow):
         self.nodes_page.rename_subscription_requested.connect(
             self.controller.rename_subscription
         )
+        self.nodes_page.column_widths_changed.connect(self._on_column_widths_changed)
         self.controller.subscriptions_changed.connect(
             self.nodes_page.set_subscriptions
         )
@@ -435,6 +436,7 @@ class MainWindow(FluentWindow):
         self._apply_window_geometry(settings)
         self._apply_theme(settings.theme, settings.accent_color)
         self._refresh_dashboard_config_choices()
+        self.nodes_page.apply_column_widths(settings.nodes_column_widths)
         routing_controls_enabled = bool(
             settings.tun_mode and settings.tun_engine == "tun2socks"
         )
@@ -446,6 +448,12 @@ class MainWindow(FluentWindow):
             if action is not None:
                 action.setEnabled(routing_controls_enabled)
         self._refresh_tray_tooltip()
+
+    def _on_column_widths_changed(self, widths: dict) -> None:
+        from copy import deepcopy
+        settings = deepcopy(self.controller.state.settings)
+        settings.nodes_column_widths = widths
+        self.controller.update_settings(settings)
 
     def _on_ping_updated(self, node_id: str, ping_ms: int | None) -> None:
         self.nodes_page.update_ping(node_id, ping_ms)
