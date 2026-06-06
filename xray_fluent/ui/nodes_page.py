@@ -29,7 +29,9 @@ from .node_detail_widget import NodeDetailWidget
 from .nodes_table_model import NodesTableModel
 
 _COLUMN_WIDTHS = {
+    0: 200,  # Имя
     1: 96,   # Тип
+    2: 200,  # Сервер
     3: 84,   # Порт
     4: 140,  # Группа
     5: 160,  # Теги
@@ -38,6 +40,86 @@ _COLUMN_WIDTHS = {
     8: 84,   # Статус
     9: 156,  # Последнее использование
 }
+
+class _BidirectionalHeaderView(QHeaderView):
+    """QHeaderView that lets you resize a column from its LEFT edge as well as its right.
+
+    Standard Qt behaviour: dragging the boundary between columns A and B always
+    resizes column A (the one to the left).  This subclass adds a second "left-edge"
+    hit zone (the first few pixels *inside* each column's header area).  Dragging
+    there resizes *that* column while the neighbour to the left absorbs the delta.
+    """
+
+    _HANDLE_PX = 6  # hit-zone width in pixels from the left edge of a section
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._left_drag_active = False
+        self._left_drag_section = -1
+        self._left_drag_prev = -1
+        self._left_drag_start_x = 0
+        self._left_drag_sec_w0 = 0
+        self._left_drag_prev_w0 = 0
+        self.setMouseTracking(True)
+
+    def _left_edge_hit(self, x: int) -> tuple[int, int]:
+        """Return (section, prev_section) when x falls in the left-edge zone of a section.
+
+        Zone is (left_edge, left_edge + HANDLE_PX] — strictly inside this section so
+        it doesn't overlap with Qt's own right-edge zone of the previous section.
+        """
+        for i in range(1, self.count()):
+            if self.isSectionHidden(i):
+                continue
+            le = self.sectionViewportPosition(i)
+            if le < x <= le + self._HANDLE_PX:
+                prev = i - 1
+                while prev >= 0 and self.isSectionHidden(prev):
+                    prev -= 1
+                if prev >= 0:
+                    return i, prev
+        return -1, -1
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            sec, prev = self._left_edge_hit(event.pos().x())
+            if sec >= 0:
+                self._left_drag_active = True
+                self._left_drag_section = sec
+                self._left_drag_prev = prev
+                self._left_drag_start_x = event.pos().x()
+                self._left_drag_sec_w0 = self.sectionSize(sec)
+                self._left_drag_prev_w0 = self.sectionSize(prev)
+                self.setCursor(Qt.CursorShape.SplitHCursor)
+                return  # suppress Qt default (which would resize the prev column)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._left_drag_active:
+            delta = event.pos().x() - self._left_drag_start_x
+            min_w = max(self.minimumSectionSize(), 20)
+            # Clamp so neither column goes below min_w
+            delta = max(-(self._left_drag_sec_w0 - min_w),
+                        min(self._left_drag_prev_w0 - min_w, delta))
+            self.resizeSection(self._left_drag_section, self._left_drag_sec_w0 - delta)
+            self.resizeSection(self._left_drag_prev, self._left_drag_prev_w0 + delta)
+            return
+        # Cursor feedback for left-edge zones
+        sec, _ = self._left_edge_hit(event.pos().x())
+        if sec >= 0:
+            self.setCursor(Qt.CursorShape.SplitHCursor)
+        else:
+            self.unsetCursor()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._left_drag_active and event.button() == Qt.MouseButton.LeftButton:
+            self._left_drag_active = False
+            self._left_drag_section = -1
+            self.unsetCursor()
+            return
+        super().mouseReleaseEvent(event)
+
 
 _SORT_KEYS = ["Вручную", "Имя", "Группа", "Тип", "Пинг", "Скорость", "Последнее использование"]
 
@@ -241,10 +323,12 @@ class NodesPage(QWidget):
         vertical_header = cast(QHeaderView, self.table.verticalHeader())
         vertical_header.setVisible(False)
 
-        horizontal_header = cast(QHeaderView, self.table.horizontalHeader())
+        _bidi_header = _BidirectionalHeaderView(self.table)
+        self.table.setHorizontalHeader(_bidi_header)
+        _bidi_header.setHighlightSections(False)
+
+        horizontal_header = _bidi_header
         horizontal_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        horizontal_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        horizontal_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         for col, width in _COLUMN_WIDTHS.items():
             self.table.setColumnWidth(col, width)
         horizontal_header.setSectionsClickable(True)
@@ -329,8 +413,8 @@ class NodesPage(QWidget):
         self._applying_column_widths = True
         try:
             for col, width in widths.items():
-                if col in _COLUMN_WIDTHS and width > 0:
-                    self.table.setColumnWidth(col, width)
+                if width > 0:
+                    self.table.setColumnWidth(int(col), width)
         finally:
             self._applying_column_widths = False
 
@@ -991,7 +1075,7 @@ class NodesPage(QWidget):
 
     def _emit_column_widths(self) -> None:
         header = cast(QHeaderView, self.table.horizontalHeader())
-        widths = {col: header.sectionSize(col) for col in _COLUMN_WIDTHS}
+        widths = {col: header.sectionSize(col) for col in range(self._table_model.columnCount())}
         self.column_widths_changed.emit(widths)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
