@@ -84,8 +84,15 @@ def _extract_digest(value: str) -> str:
     text = value.strip().lower()
     if text.startswith("sha256:"):
         text = text.split(":", 1)[1].strip()
-    parts = "".join(ch for ch in text if ch in "0123456789abcdef")
-    return parts if len(parts) == 64 else ""
+    # Use regex to find the first 64-char hex sequence (handles "hash  filename" format)
+    match = re.search(r"[a-f0-9]{64}", text)
+    return match.group() if match else ""
+
+
+def _tag_to_display_version(tag: str) -> str:
+    """Extract numeric version from a tag like 'ZapretKVN_v0.4.59.6' → '0.4.59.6'."""
+    match = _VERSION_RE.search(tag)
+    return match.group() if match else tag.lstrip("v")
 
 
 def _sha256_file(file_path: Path) -> str:
@@ -180,7 +187,7 @@ class UpdateChecker(QThread):
                 return
 
             self.result.emit(AppUpdate(
-                version=tag.lstrip("v"),
+                version=_tag_to_display_version(tag),
                 tag=tag,
                 download_url=asset["browser_download_url"],
                 size=asset.get("size", 0),

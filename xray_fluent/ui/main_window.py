@@ -1338,6 +1338,15 @@ class MainWindow(FluentWindow):
         if self._geo_update_worker and self._geo_update_worker.isRunning():
             return
 
+        # Geo files are read by xray at startup — must disconnect before replacing them
+        self._geo_reconnect = False
+        if apply_update and self.controller.connected:
+            stopped = self.controller.disconnect_current()
+            if not stopped:
+                self.updates_page.set_geo_error("Не удалось остановить подключение перед обновлением geo-файлов")
+                return
+            self._geo_reconnect = True
+
         self.updates_page.set_geo_busy(True)
         label = "Обновление geo-файлов..." if apply_update else "Проверка geo-файлов..."
         self.updates_page.set_geo_status(label)
@@ -1354,8 +1363,6 @@ class MainWindow(FluentWindow):
         self._geo_update_worker.start()
 
     def _on_geo_update_done(self, result) -> None:
-        from ..geo_updater import GeoUpdateResult
-
         self._geo_update_worker = None
         self.updates_page.hide_geo_progress()
         self.updates_page.set_geo_busy(False)
@@ -1373,6 +1380,12 @@ class MainWindow(FluentWindow):
             self.controller.state.settings.geo_installed_version = result.latest_version
             self.controller.save()
 
+        if getattr(self, "_geo_reconnect", False):
+            self._geo_reconnect = False
+            if result.status != "error":
+                self.controller._desired_connected = True
+                self.controller._request_transition("geo update reconnect")
+
     # ── Sing-box-extended update ──
 
     def _check_singbox_updates(self) -> None:
@@ -1386,6 +1399,15 @@ class MainWindow(FluentWindow):
 
         if self._singbox_ext_update_worker and self._singbox_ext_update_worker.isRunning():
             return
+
+        # Can't replace sing-box.exe while it's running (Windows file lock)
+        self._singbox_ext_reconnect = False
+        if apply_update and self.controller.connected:
+            stopped = self.controller.disconnect_current()
+            if not stopped:
+                self.updates_page.set_singbox_error("Не удалось остановить подключение перед обновлением sing-box")
+                return
+            self._singbox_ext_reconnect = True
 
         self.updates_page.set_singbox_busy(True)
         label = "Обновление sing-box-extended..." if apply_update else "Проверка sing-box-extended..."
@@ -1420,6 +1442,12 @@ class MainWindow(FluentWindow):
             self.updates_page.set_singbox_version(result.latest_version)
             self.controller.state.settings.singbox_extended_installed_version = result.latest_version
             self.controller.save()
+
+        if getattr(self, "_singbox_ext_reconnect", False):
+            self._singbox_ext_reconnect = False
+            if result.status != "error":
+                self.controller._desired_connected = True
+                self.controller._request_transition("singbox-ext update reconnect")
 
     # ── Prerelease toggle ──
 
