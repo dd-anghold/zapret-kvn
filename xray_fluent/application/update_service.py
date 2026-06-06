@@ -37,6 +37,7 @@ def run_xray_core_update(controller: AppController, apply_update: bool, silent: 
         controller.state.settings.xray_release_channel,
         controller.state.settings.xray_update_feed_url,
         apply_update=apply_update,
+        allow_prerelease=controller.state.settings.allow_prerelease,
     )
     controller._xray_update_worker.done.connect(controller._on_xray_update_worker_done)
     controller._xray_update_worker.start()

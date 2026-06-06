@@ -124,8 +124,12 @@ def _request_json(url: str) -> object:
         return json.loads(response.read().decode("utf-8"))
 
 
-def _pick_release_from_github(releases: list[dict], channel: str) -> dict | None:
-    if channel == "stable":
+def _pick_release_from_github(releases: list[dict], channel: str, allow_prerelease: bool = False) -> dict | None:
+    effective_channel = channel
+    if allow_prerelease and channel == "stable":
+        effective_channel = "beta"
+
+    if effective_channel == "stable":
         for release in releases:
             if not bool(release.get("prerelease")):
                 return release
@@ -133,21 +137,26 @@ def _pick_release_from_github(releases: list[dict], channel: str) -> dict | None
 
     prereleases = [release for release in releases if bool(release.get("prerelease"))]
     if not prereleases:
+        # Fall back to latest stable if no prereleases exist
+        for release in releases:
+            if not bool(release.get("prerelease")):
+                return release
         return None
 
-    if channel == "beta":
+    if effective_channel == "beta":
         for release in prereleases:
             text = f"{release.get('tag_name', '')} {release.get('name', '')}".lower()
             if "beta" in text or "rc" in text:
                 return release
-        return None
+        # Fallback: any prerelease
+        return prereleases[0]
 
     # nightly
     for release in prereleases:
         text = f"{release.get('tag_name', '')} {release.get('name', '')}".lower()
         if "nightly" in text or "dev" in text:
             return release
-    return None
+    return prereleases[0]
 
 
 def _find_github_asset(release: dict, name: str) -> dict | None:
@@ -172,7 +181,7 @@ def _fetch_dgst_hash(url: str) -> str:
     return _extract_digest(body)
 
 
-def resolve_xray_release(channel: str, feed_url: str = "") -> XrayCoreRelease | None:
+def resolve_xray_release(channel: str, feed_url: str = "", allow_prerelease: bool = False) -> XrayCoreRelease | None:
     normalized_channel = _normalize_channel(channel)
 
     if feed_url.strip():
@@ -190,7 +199,11 @@ def resolve_xray_release(channel: str, feed_url: str = "") -> XrayCoreRelease | 
     payload = _request_json(XRAY_GITHUB_RELEASES_API)
     if not isinstance(payload, list):
         return None
-    release = _pick_release_from_github([item for item in payload if isinstance(item, dict)], normalized_channel)
+    release = _pick_release_from_github(
+        [item for item in payload if isinstance(item, dict)],
+        normalized_channel,
+        allow_prerelease=allow_prerelease,
+    )
     if not release:
         return None
 
@@ -313,6 +326,7 @@ def check_and_update_xray_core(
     feed_url: str = "",
     apply_update: bool = False,
     on_progress=None,
+    allow_prerelease: bool = False,
 ) -> XrayCoreUpdateResult:
     exe = resolve_configured_path(
         xray_path,
@@ -336,7 +350,7 @@ def check_and_update_xray_core(
     current_version = _extract_version(current_text)
 
     try:
-        release = resolve_xray_release(channel, feed_url)
+        release = resolve_xray_release(channel, feed_url, allow_prerelease=allow_prerelease)
     except Exception as exc:
         return XrayCoreUpdateResult(
             status="error",
@@ -448,12 +462,14 @@ class XrayCoreUpdateWorker(QThread):
         channel: str,
         feed_url: str,
         apply_update: bool,
+        allow_prerelease: bool = False,
     ):
         super().__init__()
         self._xray_path = xray_path
         self._channel = channel
         self._feed_url = feed_url
         self._apply_update = apply_update
+        self._allow_prerelease = allow_prerelease
 
     def run(self) -> None:
         result = check_and_update_xray_core(
@@ -462,5 +478,6 @@ class XrayCoreUpdateWorker(QThread):
             self._feed_url,
             apply_update=self._apply_update,
             on_progress=lambda d, t: self.progress.emit(int(d * 100 / t)),
+            allow_prerelease=self._allow_prerelease,
         )
         self.done.emit(result)

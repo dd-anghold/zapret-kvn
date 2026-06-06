@@ -108,9 +108,21 @@ class MainWindow(FluentWindow):
         self._consume_update_error_log()
 
         from ..engines.xray import get_xray_version
+        from ..engines.singbox.manager import get_singbox_version
 
         xv = get_xray_version(self.controller.state.settings.xray_path)
         self.updates_page.set_xray_version(xv or "")
+
+        sbv = get_singbox_version(self.controller.state.settings.singbox_path)
+        self.updates_page.set_singbox_version(sbv or "")
+
+        geo_ver = self.controller.state.settings.geo_installed_version
+        self.updates_page.set_geo_version(geo_ver)
+
+        self.updates_page.set_prerelease(self.controller.state.settings.allow_prerelease)
+
+        self._geo_update_worker = None
+        self._singbox_ext_update_worker = None
 
         if self.controller.state.settings.check_updates:
             QTimer.singleShot(2500, lambda: self._check_updates(silent=True))
@@ -269,6 +281,11 @@ class MainWindow(FluentWindow):
         self.updates_page.check_app_requested.connect(self._check_updates)
         self.updates_page.check_xray_requested.connect(self._check_xray_updates)
         self.updates_page.update_xray_requested.connect(self._update_xray_core)
+        self.updates_page.check_geo_requested.connect(self._check_geo_updates)
+        self.updates_page.update_geo_requested.connect(self._update_geo)
+        self.updates_page.check_singbox_requested.connect(self._check_singbox_updates)
+        self.updates_page.update_singbox_requested.connect(self._update_singbox_extended)
+        self.updates_page.prerelease_toggled.connect(self._on_prerelease_toggled)
         self.settings_page.export_backup_requested.connect(self._export_backup)
         self.settings_page.import_backup_requested.connect(self._import_backup)
         self.settings_page.set_encryption_requested.connect(self._set_encryption)
@@ -496,10 +513,13 @@ class MainWindow(FluentWindow):
 
     def _on_xray_update_result(self, result: XrayCoreUpdateResult) -> None:
         self.logs_page.append_line(f"[core-update] {result.status}: {result.message}")
+        self.updates_page.hide_xray_progress()
         if result.status == "error":
             self.updates_page.set_xray_error(result.message)
         elif result.status in {"updated", "up_to_date"}:
             self.updates_page.set_xray_success(result.message)
+        elif result.status == "available":
+            self.updates_page.set_xray_update_available(result.latest_version)
         else:
             self.updates_page.set_xray_status(result.message)
 
@@ -1142,7 +1162,10 @@ class MainWindow(FluentWindow):
             return
         self._update_in_progress = True
         self._pending_update: AppUpdate | None = None
-        self._update_checker = UpdateChecker(parent=self)
+        self._update_checker = UpdateChecker(
+            allow_prerelease=self.controller.state.settings.allow_prerelease,
+            parent=self,
+        )
         self._update_checker.result.connect(
             lambda u: self._on_update_check_result(u, silent)
         )
@@ -1300,6 +1323,109 @@ class MainWindow(FluentWindow):
     def _update_xray_core(self) -> None:
         self.updates_page.set_xray_status("Обновление Xray...")
         self.controller.run_xray_core_update(True, silent=False)
+
+    # ── Geo update ──
+
+    def _check_geo_updates(self) -> None:
+        self._run_geo_update(apply_update=False)
+
+    def _update_geo(self) -> None:
+        self._run_geo_update(apply_update=True)
+
+    def _run_geo_update(self, apply_update: bool) -> None:
+        from ..geo_updater import GeoUpdateWorker
+
+        if self._geo_update_worker and self._geo_update_worker.isRunning():
+            return
+
+        self.updates_page.set_geo_busy(True)
+        label = "Обновление geo-файлов..." if apply_update else "Проверка geo-файлов..."
+        self.updates_page.set_geo_status(label)
+        self.updates_page.hide_geo_progress()
+
+        settings = self.controller.state.settings
+        self._geo_update_worker = GeoUpdateWorker(
+            installed_version=settings.geo_installed_version,
+            allow_prerelease=settings.allow_prerelease,
+            apply_update=apply_update,
+        )
+        self._geo_update_worker.progress.connect(self.updates_page.set_geo_progress)
+        self._geo_update_worker.done.connect(self._on_geo_update_done)
+        self._geo_update_worker.start()
+
+    def _on_geo_update_done(self, result) -> None:
+        from ..geo_updater import GeoUpdateResult
+
+        self._geo_update_worker = None
+        self.updates_page.hide_geo_progress()
+        self.updates_page.set_geo_busy(False)
+        self.logs_page.append_line(f"[geo-update] {result.status}: {result.message}")
+
+        if result.status == "error":
+            self.updates_page.set_geo_error(result.message)
+        elif result.status == "up_to_date":
+            self.updates_page.set_geo_success(result.message)
+        elif result.status == "available":
+            self.updates_page.set_geo_update_available(result.latest_version)
+        elif result.status == "updated":
+            self.updates_page.set_geo_success(result.message)
+            self.updates_page.set_geo_version(result.latest_version)
+            self.controller.state.settings.geo_installed_version = result.latest_version
+            self.controller.save()
+
+    # ── Sing-box-extended update ──
+
+    def _check_singbox_updates(self) -> None:
+        self._run_singbox_update(apply_update=False)
+
+    def _update_singbox_extended(self) -> None:
+        self._run_singbox_update(apply_update=True)
+
+    def _run_singbox_update(self, apply_update: bool) -> None:
+        from ..singbox_updater import SingboxExtendedUpdateWorker
+
+        if self._singbox_ext_update_worker and self._singbox_ext_update_worker.isRunning():
+            return
+
+        self.updates_page.set_singbox_busy(True)
+        label = "Обновление sing-box-extended..." if apply_update else "Проверка sing-box-extended..."
+        self.updates_page.set_singbox_status(label)
+        self.updates_page.hide_singbox_progress()
+
+        settings = self.controller.state.settings
+        self._singbox_ext_update_worker = SingboxExtendedUpdateWorker(
+            singbox_path=settings.singbox_path,
+            installed_version=settings.singbox_extended_installed_version,
+            allow_prerelease=settings.allow_prerelease,
+            apply_update=apply_update,
+        )
+        self._singbox_ext_update_worker.progress.connect(self.updates_page.set_singbox_progress)
+        self._singbox_ext_update_worker.done.connect(self._on_singbox_update_done)
+        self._singbox_ext_update_worker.start()
+
+    def _on_singbox_update_done(self, result) -> None:
+        self._singbox_ext_update_worker = None
+        self.updates_page.hide_singbox_progress()
+        self.updates_page.set_singbox_busy(False)
+        self.logs_page.append_line(f"[singbox-ext-update] {result.status}: {result.message}")
+
+        if result.status == "error":
+            self.updates_page.set_singbox_error(result.message)
+        elif result.status == "up_to_date":
+            self.updates_page.set_singbox_success(result.message)
+        elif result.status == "available":
+            self.updates_page.set_singbox_update_available(result.latest_version)
+        elif result.status == "updated":
+            self.updates_page.set_singbox_success(result.message)
+            self.updates_page.set_singbox_version(result.latest_version)
+            self.controller.state.settings.singbox_extended_installed_version = result.latest_version
+            self.controller.save()
+
+    # ── Prerelease toggle ──
+
+    def _on_prerelease_toggled(self, enabled: bool) -> None:
+        self.controller.state.settings.allow_prerelease = enabled
+        self.controller.save()
 
     def _apply_theme(self, theme_name: str, accent_color: str) -> None:
         normalized = theme_name.lower().strip()

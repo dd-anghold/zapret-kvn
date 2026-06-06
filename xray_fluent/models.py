@@ -226,6 +226,9 @@ class AppSettings:
     auto_switch_delay_sec: int = 30
     auto_switch_cooldown_sec: int = 60
     nodes_column_widths: dict = field(default_factory=dict)
+    allow_prerelease: bool = False
+    geo_installed_version: str = ""
+    singbox_extended_installed_version: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -266,6 +269,9 @@ class AppSettings:
             "auto_switch_delay_sec": self.auto_switch_delay_sec,
             "auto_switch_cooldown_sec": self.auto_switch_cooldown_sec,
             "nodes_column_widths": {str(k): v for k, v in self.nodes_column_widths.items()},
+            "allow_prerelease": self.allow_prerelease,
+            "geo_installed_version": self.geo_installed_version,
+            "singbox_extended_installed_version": self.singbox_extended_installed_version,
         }
 
     @staticmethod
@@ -311,6 +317,9 @@ class AppSettings:
                 int(k): int(v)
                 for k, v in (data.get("nodes_column_widths") or {}).items()
             },
+            allow_prerelease=bool(data.get("allow_prerelease", False)),
+            geo_installed_version=str(data.get("geo_installed_version") or ""),
+            singbox_extended_installed_version=str(data.get("singbox_extended_installed_version") or ""),
         )
 
 

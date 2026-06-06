@@ -13,6 +13,8 @@ DEFAULT_SOCKS_PORT = 10808
 DEFAULT_HTTP_PORT = 10808
 DEFAULT_XRAY_STATS_API_PORT = 19085
 XRAY_GITHUB_RELEASES_API = "https://api.github.com/repos/XTLS/Xray-core/releases"
+GEO_GITHUB_RELEASES_API = "https://api.github.com/repos/runetfreedom/russia-v2ray-rules-dat/releases"
+SINGBOX_EXTENDED_GITHUB_RELEASES_API = "https://api.github.com/repos/shtorm-7/sing-box-extended/releases"
 
 ROUTING_GLOBAL = "global"
 ROUTING_RULE = "rule"

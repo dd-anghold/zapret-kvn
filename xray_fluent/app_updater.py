@@ -27,6 +27,7 @@ from .constants import APP_VERSION, BASE_DIR
 
 GITHUB_REPO = "dd-anghold/zapret-kvn"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_API_ALL = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
 USER_AGENT = f"ZapretKVN/{APP_VERSION}"
 
 
@@ -110,11 +111,33 @@ class UpdateChecker(QThread):
     result = pyqtSignal(object)  # AppUpdate | None
     error = pyqtSignal(str)
 
-    def run(self) -> None:
-        try:
+    def __init__(self, allow_prerelease: bool = False, parent=None):
+        super().__init__(parent)
+        self._allow_prerelease = allow_prerelease
+
+    def _find_release_data(self) -> dict | None:
+        if self._allow_prerelease:
+            req = Request(GITHUB_API_ALL, headers={"User-Agent": USER_AGENT})
+            with urlopen(req, timeout=15) as resp:
+                releases = json.loads(resp.read())
+            if not isinstance(releases, list):
+                return None
+            for release in releases:
+                if isinstance(release, dict) and not release.get("draft"):
+                    return release
+            return None
+        else:
             req = Request(GITHUB_API, headers={"User-Agent": USER_AGENT})
             with urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read())
+            return data if isinstance(data, dict) else None
+
+    def run(self) -> None:
+        try:
+            data = self._find_release_data()
+            if not data:
+                self.result.emit(None)
+                return
 
             tag = data.get("tag_name", "")
 
