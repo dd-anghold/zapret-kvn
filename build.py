@@ -32,8 +32,6 @@ ZIP_PATH = DIST_DIR / f"{APP_NAME}-portable.zip"
 MANIFEST = ROOT / "uac_admin.manifest"
 CORE_DIR = ROOT / "core"
 ZAPRET_DIR = ROOT / "zapret"
-DATA_TEMPLATES_DIR = ROOT / "data" / "templates"
-DATA_CONFIGS_DIR = ROOT / "data" / "configs"
 
 
 def _print(msg: str) -> None:
@@ -123,6 +121,8 @@ def build_exe() -> None:
     if temp_dist.exists():
         shutil.rmtree(temp_dist)
 
+    sep = ";" if os.name == "nt" else ":"
+    defaults_src = _windows_path(ROOT / "xray_fluent" / "defaults")
     cmd = [
         str(VENV_PYTHON), "-m", "PyInstaller",
         _windows_path(ROOT / "main.py"),
@@ -134,6 +134,8 @@ def build_exe() -> None:
         "--uac-admin",
         "--manifest", _windows_path(MANIFEST),
         "--distpath", _windows_path(temp_dist),
+        # Bundle default configs/templates inside the Python package
+        "--add-data", f"{defaults_src}{sep}xray_fluent/defaults",
         # win32comext is needed by qframelesswindow for Mica/DWM effects
         "--hidden-import", "win32comext",
         "--hidden-import", "win32comext.shell",
@@ -159,18 +161,6 @@ def build_exe() -> None:
     if ZAPRET_DIR.is_dir():
         _print(f"Merging zapret -> {dst_zapret}")
         _copy_tree_merge(ZAPRET_DIR, dst_zapret)
-
-    # Copy tracked raw config templates for first-run users
-    dst_templates = APP_DIR / "data" / "templates"
-    if DATA_TEMPLATES_DIR.is_dir():
-        _print(f"Merging templates -> {dst_templates}")
-        _copy_tree_merge(DATA_TEMPLATES_DIR, dst_templates)
-
-    # Copy default configs for first-run users (xray + sing-box)
-    dst_configs = APP_DIR / "data" / "configs"
-    if DATA_CONFIGS_DIR.is_dir():
-        _print(f"Merging configs -> {dst_configs}")
-        _copy_tree_merge(DATA_CONFIGS_DIR, dst_configs)
 
     _print(f"Build complete: {APP_DIR / (APP_NAME + '.exe')}")
 

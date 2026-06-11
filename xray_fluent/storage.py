@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from .constants import (
@@ -53,6 +54,19 @@ class StateStorage:
         XRAY_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         LOG_DIR.mkdir(parents=True, exist_ok=True)
+        self._install_bundled_defaults()
+
+    def _install_bundled_defaults(self) -> None:
+        bundled = Path(__file__).resolve().parent / "defaults"
+        if not bundled.is_dir():
+            return
+        for src in bundled.rglob("*"):
+            if not src.is_file():
+                continue
+            dest = DATA_DIR / src.relative_to(bundled)
+            if not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest)
 
     def _default_state(self) -> AppState:
         state = AppState()

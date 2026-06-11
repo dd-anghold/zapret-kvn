@@ -1,0 +1,254 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "mixed-in",
+      "listen": "0.0.0.0",
+      "port": 10808,
+      "protocol": "mixed",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "routeOnly": true
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "freedom",
+      "settings": {}
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole",
+      "settings": {}
+    }
+  ],
+  "routing": {
+    "domainStrategy": "IPOnDemand",
+    "rules": [
+      {
+        "type": "field",
+        "protocol": [
+          "bittorrent"
+        ],
+        "outboundTag": "direct",
+        "remarks": "Торрент напрямую"
+      },
+      {
+        "type": "field",
+        "outboundTag": "block",
+        "remarks": "Блокировка рекламы",
+        "domain": [
+          "geosite:category-ads-all"
+        ]
+      },
+      {
+        "port": "",
+        "outboundTag": "direct",
+        "process": [
+          "RvRvpnGui.exe",
+          "RvControlSvc.exe"
+        ],
+        "enabled": true,
+        "remarks": "exeMine"
+      },
+      {
+        "port": "",
+        "outboundTag": "proxy",
+        "domain": [
+          "api.anthropic.com",
+          "claude.ai",
+          "anthropic.com",
+          "statsig.anthropic.com",
+          "sentry.io",
+          "api.anthropic.com"
+        ],
+        "enabled": true,
+        "remarks": "Claude"
+      },
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "domain": [
+          "geosite:ru-available-only-inside",
+          "regexp:.*\\.ru$",
+          "regexp:.*\\.su$",
+          "regexp:.*\\.xn--p1ai$"
+        ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "direct",
+        "domain": [
+          "max.ru",
+          "okcdn.ru",
+          "oneme.ru",
+          "remanga.org",
+          "vk.com"
+        ]
+      },
+      {
+        "type": "field",
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:private"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "ext-twitch.tv",
+          "jtvnw.net",
+          "live-video.net",
+          "ttvnw.net",
+          "twitch-shadow.net",
+          "twitch.a2z.com",
+          "twitch.tv",
+          "twitchcdn-shadow.net",
+          "twitchcdn.net",
+          "twitchsvc.net"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "playartifact.com",
+          "s.team",
+          "steam-api.com",
+          "steam-chat.com",
+          "steam.tv",
+          "steamcommunity.com",
+          "steamcontent.com",
+          "steamdeck.com",
+          "steamgames.com",
+          "steampowered.com",
+          "steamserver.net",
+          "steamstatic.com",
+          "steamusercontent.com"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "outboundTag": "proxy",
+        "domain": [
+          "remanga.org"
+        ]
+      },
+      {
+        "type": "field",
+        "ip": [
+          "1.0.0.1",
+          "1.1.1.1",
+          "8.8.4.4",
+          "8.8.8.8"
+        ],
+        "outboundTag": "proxy"
+      },
+      {
+        "type": "field",
+        "network": "udp",
+        "port": "50000-65535",
+        "outboundTag": "proxy"
+      },
+      {
+        "type": "field",
+        "process": [
+          "bf6.exe",
+          "Discord.exe",
+          "EAAntiCheat.GameServiceLauncher.exe",
+          "Forefront_Internal.exe",
+          "GTFO.exe",
+          "Overwolf.exe",
+          "Telegram.exe",
+          "Warframe.x64.exe",
+          "ModernWarfare.exe"
+        ],
+        "outboundTag": "proxy"
+      },
+      {
+        "type": "field",
+        "ip": [
+          "geoip:ru-blocked",
+          "geoip:cloudflare",
+          "geoip:cloudfront",
+          "geoip:google"
+        ],
+        "outboundTag": "proxy"
+      },
+      {
+        "type": "field",
+        "outboundTag": "proxy",
+        "domain": [
+          "2ip.io",
+          "alecaframe.com",
+          "alienwarearena.com",
+          "b-cdn.net",
+          "battlefield6.com",
+          "cloudflare.com",
+          "csrep.gg",
+          "curseforge.com",
+          "deepseek.com",
+          "dtf.ru",
+          "epicgames.com",
+          "fanatical.com",
+          "ftfru.fun",
+          "gameloft.com",
+          "geosite:ru-blocked",
+          "hydralinks.pages.dev",
+          "lenovo.com",
+          "meshy.ai",
+          "mysql.com",
+          "netduma.com",
+          "nexus-cdn.com",
+          "nexusmods.com",
+          "overwolf.com",
+          "rankone.global",
+          "rockstargames.com",
+          "rockstarnorth.com",
+          "rsg.sc",
+          "rtm.tnt-ea.com",
+          "soundalerts.com",
+          "spicetify.app",
+          "spotify.com",
+          "sqlitestudio.pl",
+          "steamdb.info",
+          "vencord.dev",
+          "whatismyip.com",
+          "wsteamcommunity.com",
+          "zimaspace.com"
+        ]
+      },
+      {
+        "type": "field",
+        "port": "0-65535",
+        "outboundTag": "direct"
+      }
+    ]
+  }
+}

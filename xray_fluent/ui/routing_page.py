@@ -239,9 +239,29 @@ class RoutingPage(QWidget):
         )
         root.addWidget(self.tun_default_info)
 
+        # UWP auto-routing toggle
+        uwp_row = QHBoxLayout()
+        self._tun_uwp_label = BodyLabel("UWP приложения (Microsoft Store):", container)
+        uwp_row.addWidget(self._tun_uwp_label)
+        self.tun_route_uwp_switch = SwitchButton(container)
+        uwp_row.addWidget(self.tun_route_uwp_switch)
+        uwp_row.addStretch(1)
+        self._tun_uwp_row_widget = QWidget(container)
+        self._tun_uwp_row_widget.setLayout(uwp_row)
+        root.addWidget(self._tun_uwp_row_widget)
+
+        self._tun_uwp_info = CaptionLabel(
+            "Автоматически направлять все установленные UWP-приложения через прокси. "
+            "При первом подключении может добавить задержку (сканирование манифестов пакетов).",
+            container,
+        )
+        root.addWidget(self._tun_uwp_info)
+
         # Hidden by default — shown only in TUN mode
         self._tun_default_row_widget.setVisible(False)
         self.tun_default_info.setVisible(False)
+        self._tun_uwp_row_widget.setVisible(False)
+        self._tun_uwp_info.setVisible(False)
 
         # --- Process presets (quick-add app groups) ---
         self._process_presets_group = SettingCardGroup("Быстрый выбор приложений", container)
@@ -365,6 +385,7 @@ class RoutingPage(QWidget):
         self._dns_proxy_type.currentIndexChanged.connect(self._schedule_apply)
         self.bypass_switch.checkedChanged.connect(self._schedule_apply)
         self.tun_default_combo.currentIndexChanged.connect(self._schedule_apply)
+        self.tun_route_uwp_switch.checkedChanged.connect(self._schedule_apply)
         self.add_rule_btn.clicked.connect(self._on_add_rule)
         self.del_rule_btn.clicked.connect(self._on_del_rules)
         self.import_btn.clicked.connect(self._on_import_rules)
@@ -394,6 +415,7 @@ class RoutingPage(QWidget):
         self._select_combo_value(self._dns_proxy_type, routing.dns_proxy_type)
         self.bypass_switch.setChecked(routing.bypass_lan)
         self._select_combo_value(self.tun_default_combo, routing.tun_default_outbound)
+        self.tun_route_uwp_switch.setChecked(routing.tun_route_uwp)
 
         # Populate service cards
         use_defaults = not routing.service_routes
@@ -467,6 +489,8 @@ class RoutingPage(QWidget):
         self._tun_default_row_widget.setVisible(enabled)
         self._dns_tun_widget.setVisible(enabled)
         self.tun_default_info.setVisible(enabled)
+        self._tun_uwp_row_widget.setVisible(enabled)
+        self._tun_uwp_info.setVisible(enabled)
         self._process_presets_group.setVisible(enabled)
 
     # --- Rules table helpers ---
@@ -718,6 +742,7 @@ class RoutingPage(QWidget):
                 process_preset_routes[preset_id] = action
 
         tun_default_outbound = self.tun_default_combo.currentData() or "direct"
+        tun_route_uwp = self.tun_route_uwp_switch.isChecked()
 
         routing = RoutingSettings(
             mode=str(mode),
@@ -734,6 +759,7 @@ class RoutingPage(QWidget):
             process_preset_routes=process_preset_routes,
             service_routes=service_routes,
             tun_default_outbound=str(tun_default_outbound),
+            tun_route_uwp=tun_route_uwp,
         )
         self._set_apply_pending(False)
         self.apply_requested.emit(routing)

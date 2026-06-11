@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import ntpath
+import subprocess
 from copy import deepcopy
+from functools import lru_cache
 from ipaddress import ip_network
 from typing import Any
 
@@ -15,6 +17,7 @@ from ...constants import (
     DEFAULT_XRAY_STATS_API_PORT,
 )
 from ...models import AppSettings, Node, RoutingSettings
+from ...process_presets import PROCESS_PRESETS_BY_ID
 from ...service_presets import SERVICE_PRESETS_BY_ID
 
 
@@ -86,6 +89,32 @@ def _resolve_xray_process_name(rule: dict[str, str]) -> str:
     return value
 
 
+@lru_cache(maxsize=1)
+def _get_uwp_process_names() -> tuple[str, ...]:
+    """Return executable basenames of all installed non-framework UWP apps."""
+    script = (
+        "Get-AppxPackage | Where-Object { $_.IsFramework -eq $false } | ForEach-Object {"
+        "  $m = Join-Path $_.InstallLocation 'AppxManifest.xml';"
+        "  if (Test-Path $m) { try {"
+        "    [xml]$x = [xml](Get-Content $m -Raw -ErrorAction Stop);"
+        "    $x.Package.Applications.Application | ForEach-Object {"
+        "      if ($_.Executable) { Split-Path $_.Executable -Leaf }"
+        "    }"
+        "  } catch {} }"
+        "} | Sort-Object -Unique"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            return tuple(line.strip() for line in result.stdout.splitlines() if line.strip())
+    except Exception:
+        pass
+    return ()
+
+
 def build_xray_config(
     node: Node,
     routing: RoutingSettings,
@@ -124,17 +153,41 @@ def build_xray_config(
             }
         )
 
-    if not settings.tun_mode:
-        for pr in routing.process_rules:
-            name = _resolve_xray_process_name(pr)
-            action = pr.get("action", "direct")
-            if name:
-                routing_rules.append({
-                    "type": "field",
-                    "process": [name],
-                    "network": "tcp,udp",
-                    "outboundTag": action if action in ("direct", "proxy", "block") else "direct",
-                })
+    # Process rules — work in both system-proxy and TUN mode
+    for pr in routing.process_rules:
+        name = _resolve_xray_process_name(pr)
+        action = pr.get("action", "direct")
+        if name:
+            routing_rules.append({
+                "type": "field",
+                "process": [name],
+                "network": "tcp,udp",
+                "outboundTag": action if action in ("direct", "proxy", "block") else "direct",
+            })
+
+    # Process preset groups (telegram, discord, windows_system, etc.)
+    for preset_id, action in routing.process_preset_routes.items():
+        preset = PROCESS_PRESETS_BY_ID.get(preset_id)
+        if not preset:
+            continue
+        tag = action if action in ("direct", "proxy", "block") else "direct"
+        routing_rules.append({
+            "type": "field",
+            "process": list(preset.processes),
+            "network": "tcp,udp",
+            "outboundTag": tag,
+        })
+
+    # UWP apps (TUN mode only) — enumerate installed Microsoft Store apps and proxy them
+    if settings.tun_mode and routing.tun_route_uwp:
+        uwp_names = list(_get_uwp_process_names())
+        if uwp_names:
+            routing_rules.append({
+                "type": "field",
+                "process": uwp_names,
+                "network": "tcp,udp",
+                "outboundTag": "proxy",
+            })
 
     # Merge service preset domains
     service_direct: list[str] = []
@@ -157,32 +210,21 @@ def build_xray_config(
     _append_domain_ip_rule(routing_rules, routing.block_domains, "block")
     _append_domain_ip_rule(routing_rules, routing.proxy_domains, "proxy")
 
-    mode = routing.mode
-
-    if mode == ROUTING_GLOBAL:
-        routing_rules.append(
-            {
-                "type": "field",
-                "network": "tcp,udp",
-                "outboundTag": "proxy",
-            }
-        )
-    elif mode == ROUTING_DIRECT:
-        routing_rules.append(
-            {
-                "type": "field",
-                "network": "tcp,udp",
-                "outboundTag": "direct",
-            }
-        )
+    # Catch-all rule:
+    # In TUN mode: use tun_default_outbound (only listed processes + UWP go to proxy,
+    #              everything else goes where tun_default_outbound points)
+    # In system-proxy mode: use routing mode (GLOBAL/RULE/DIRECT)
+    if settings.tun_mode:
+        catch_all = routing.tun_default_outbound if routing.tun_default_outbound in ("proxy", "direct") else "direct"
+        routing_rules.append({"type": "field", "network": "tcp,udp", "outboundTag": catch_all})
     else:
-        routing_rules.append(
-            {
-                "type": "field",
-                "network": "tcp,udp",
-                "outboundTag": "proxy",
-            }
-        )
+        mode = routing.mode
+        if mode == ROUTING_GLOBAL:
+            routing_rules.append({"type": "field", "network": "tcp,udp", "outboundTag": "proxy"})
+        elif mode == ROUTING_DIRECT:
+            routing_rules.append({"type": "field", "network": "tcp,udp", "outboundTag": "direct"})
+        else:
+            routing_rules.append({"type": "field", "network": "tcp,udp", "outboundTag": "proxy"})
 
     config: dict[str, Any] = {
         "log": {

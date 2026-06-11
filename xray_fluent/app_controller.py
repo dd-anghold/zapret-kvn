@@ -321,6 +321,10 @@ class AppController(QObject):
             self.passphrase_required.emit()
             return False
 
+        if self.state.selected_node_id is None and self.state.nodes:
+            self.state.selected_node_id = self.state.nodes[0].id
+            self.schedule_save()
+
         self._detect_countries_sync()
         self._migrate_sort_order()
         self.nodes_changed.emit(self.state.nodes)
