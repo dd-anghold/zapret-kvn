@@ -250,8 +250,13 @@ def ensure_xray_tun_contract(controller: AppController, payload: dict[str, Any])
         settings.pop("endpointIndependentNat", None)
         sniffing = controller._ensure_dict(existing_tun, "sniffing")
         sniffing.setdefault("enabled", True)
-        sniffing.setdefault("destOverride", ["http", "tls"])
-        sniffing.pop("routeOnly", None)
+        sniffing.setdefault("destOverride", ["http", "tls", "quic"])
+        # routeOnly=true → use the sniffed domain only for the routing decision,
+        # but still dial the ORIGINAL destination IP. This makes TUN routing behave
+        # exactly like v2rayN's mixed-in proxy inbound: process/domain rules pick the
+        # outbound, unmatched (catch-all 'direct') traffic exits the physical NIC by
+        # IP with no DNS re-resolve loop, and only matched apps/domains take the proxy.
+        sniffing.setdefault("routeOnly", True)
     else:
         inbounds.append(
             {
@@ -266,7 +271,8 @@ def ensure_xray_tun_contract(controller: AppController, payload: dict[str, Any])
                 },
                 "sniffing": {
                     "enabled": True,
-                    "destOverride": ["http", "tls"],
+                    "destOverride": ["http", "tls", "quic"],
+                    "routeOnly": True,
                 },
             }
         )
@@ -305,12 +311,19 @@ def ensure_xray_tun_contract(controller: AppController, payload: dict[str, Any])
             rules.insert(0, rule)
 
     # --- patch catch-all direct rules that cause routing loops ---
-    n = _redirect_tun_direct_catchalls(payload)
-    if n:
-        controller._log(
-            f"[xray-tun] auto-patched {n} catch-all 'port→direct' rule(s) to 'proxy' "
-            "(prevents routing loop; original config file unchanged)"
-        )
+    # Only needed when xray cannot send the direct/freedom outbound out the
+    # physical NIC by itself. With autoOutboundsInterface (always set above) xray
+    # binds the direct outbound to the real adapter, so the catch-all 'direct'
+    # rule no longer loops and MUST be honored — otherwise every unmatched
+    # connection would be forced through the proxy and the whole system would be
+    # tunneled instead of just the explicitly routed apps/domains.
+    if not _tun_inbound_has_auto_outbounds_interface(payload):
+        n = _redirect_tun_direct_catchalls(payload)
+        if n:
+            controller._log(
+                f"[xray-tun] auto-patched {n} catch-all 'port→direct' rule(s) to 'proxy' "
+                "(prevents routing loop; original config file unchanged)"
+            )
 
     return tun_name
 
